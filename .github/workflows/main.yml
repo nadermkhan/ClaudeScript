@@ -1,11 +1,100 @@
+name: Build ClaudeScript
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-llvm
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-lld
+            mingw-w64-x86_64-qt5-static
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-freetype
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-libjpeg-turbo
+            mingw-w64-x86_64-harfbuzz
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-brotli
+            mingw-w64-x86_64-graphite2
+            mingw-w64-x86_64-bzip2
+            mingw-w64-x86_64-libb2
+            make
+            pkg-config
+
+      - name: Generate MOC
+        run: |
+          QT5_STATIC="/mingw64/qt5-static"
+          "${QT5_STATIC}/bin/moc" main.cpp -o main.moc
+
+      - name: Debug LLVM Config
+        run: |
+          echo "=== llvm-config --version ==="
+          llvm-config --version
+          echo "=== llvm-config --shared-mode ==="
+          llvm-config --shared-mode || true
+          echo "=== llvm-config --libs (default) ==="
+          llvm-config --libs core orcjit native support
+          echo "=== llvm-config --link-static --libs ==="
+          llvm-config --link-static --libs core orcjit native support 2>&1 || true
+          echo "=== llvm-config --link-static --system-libs ==="
+          llvm-config --link-static --system-libs 2>&1 || true
+          echo "=== llvm-config --ldflags ==="
+          llvm-config --ldflags
+          echo "=== llvm-config --cppflags ==="
+          llvm-config --cppflags
+          echo "=== Check for static LLVM libs ==="
+          ls /mingw64/lib/libLLVM*.a 2>/dev/null | head -20 || echo "No static LLVM libs found"
+          echo "=== Check for shared LLVM libs ==="
+          ls /mingw64/lib/libLLVM*.dll.a 2>/dev/null | head -10 || echo "No shared LLVM import libs found"
+          ls /mingw64/bin/LLVM*.dll 2>/dev/null | head -10 || echo "No LLVM DLLs found"
+
       - name: Compile
         run: |
           QT5_STATIC="/mingw64/qt5-static"
 
           LLVM_CPPFLAGS="$(llvm-config --cppflags)"
           LLVM_LDFLAGS="$(llvm-config --ldflags)"
-          LLVM_LIBS="$(llvm-config --link-static --libs core orcjit native support)"
-          LLVM_SYSLIBS="$(llvm-config --link-static --system-libs)"
+          LLVM_LIBS="$(llvm-config --link-static --libs core orcjit native support 2>/dev/null)" || true
+
+          # Fallback: if --link-static didn't work, try without -static linker flag
+          if [ -z "$LLVM_LIBS" ]; then
+            echo "WARN: --link-static failed, falling back to default libs"
+            LLVM_LIBS="$(llvm-config --libs core orcjit native support)"
+          fi
+
+          LLVM_SYSLIBS="$(llvm-config --link-static --system-libs 2>/dev/null)" || true
+          if [ -z "$LLVM_SYSLIBS" ]; then
+            LLVM_SYSLIBS="$(llvm-config --system-libs)"
+          fi
+
+          echo "LLVM_CPPFLAGS: ${LLVM_CPPFLAGS}"
+          echo "LLVM_LDFLAGS: ${LLVM_LDFLAGS}"
+          echo "LLVM_LIBS: ${LLVM_LIBS}"
+          echo "LLVM_SYSLIBS: ${LLVM_SYSLIBS}"
 
           QT5_LIBS=""
           QT5_LIBS="$QT5_LIBS -L${QT5_STATIC}/lib"
@@ -32,10 +121,12 @@
           PLATFORM_LIBS="$PLATFORM_LIBS -ld3d11 -ldxgi -ldxguid"
           PLATFORM_LIBS="$PLATFORM_LIBS -lrpcrt4 -liphlpapi"
 
-          # Debug: show what llvm-config returns
-          echo "LLVM_LIBS: ${LLVM_LIBS}"
-          echo "LLVM_SYSLIBS: ${LLVM_SYSLIBS}"
-          echo "LLVM_LDFLAGS: ${LLVM_LDFLAGS}"
+          # Determine if we can do fully static
+          STATIC_FLAG="-static"
+          if echo "$LLVM_LIBS" | grep -q "\-lLLVM-"; then
+            echo "WARN: Using monolithic shared LLVM, dropping -static flag"
+            STATIC_FLAG=""
+          fi
 
           g++ -std=c++17 -O2 -DNDEBUG \
             -I"${QT5_STATIC}/include" \
@@ -43,7 +134,6 @@
             -I"${QT5_STATIC}/include/QtGui" \
             -I"${QT5_STATIC}/include/QtWidgets" \
             ${LLVM_CPPFLAGS} \
-            -DQT_NO_KEYWORDS \
             -DQT_STATICPLUGIN \
             -DQT_STATIC \
             main.cpp \
@@ -56,7 +146,65 @@
             ${PLATFORM_LIBS} \
             -Wl,--end-group \
             -static-libgcc -static-libstdc++ \
-            -static \
+            ${STATIC_FLAG} \
             -Wl,--subsystem,console
 
           echo "Build complete"
+
+      - name: Copy LLVM DLL if needed
+        run: |
+          # If we linked against shared LLVM, bundle the DLL
+          if ldd claudescript.exe 2>/dev/null | grep -qi "llvm"; then
+            echo "Copying LLVM shared library..."
+            cp /mingw64/bin/LLVM-*.dll . 2>/dev/null || true
+          fi
+          # Copy any other needed MinGW DLLs
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if ldd claudescript.exe 2>/dev/null | grep -qi "$dll"; then
+              echo "Copying $dll..."
+              cp "/mingw64/bin/$dll" . 2>/dev/null || true
+            fi
+          done
+
+      - name: Verify Binary
+        run: |
+          ls -lh claudescript.exe
+          echo "--- Dependency check ---"
+          ldd claudescript.exe 2>&1 || echo "No dynamic dependencies (fully static)"
+          echo "--- Quick test ---"
+          echo 'window("Test", 400, 300, () => { print("hello"); });' > test.cs
+          timeout 5 ./claudescript.exe --emit-ir test.cs || true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudescript-windows-x64
+          path: |
+            claudescript.exe
+            *.dll
+          retention-days: 90
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: claudescript-windows-x64
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ClaudeScript ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/claudescript.exe
+            dist/*.dll
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
