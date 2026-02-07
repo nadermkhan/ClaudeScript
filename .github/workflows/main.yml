@@ -42,6 +42,9 @@ jobs:
             mingw-w64-x86_64-graphite2
             mingw-w64-x86_64-bzip2
             mingw-w64-x86_64-libb2
+            mingw-w64-x86_64-libxml2
+            mingw-w64-x86_64-libiconv
+            mingw-w64-x86_64-xz
             make
             pkg-config
 
@@ -50,46 +53,17 @@ jobs:
           QT5_STATIC="/mingw64/qt5-static"
           "${QT5_STATIC}/bin/moc" main.cpp -o main.moc
 
-      - name: Debug LLVM Config
-        run: |
-          echo "=== llvm-config --version ==="
-          llvm-config --version
-          echo "=== llvm-config --shared-mode ==="
-          llvm-config --shared-mode || true
-          echo "=== llvm-config --libs (default) ==="
-          llvm-config --libs core orcjit native support
-          echo "=== llvm-config --link-static --libs ==="
-          llvm-config --link-static --libs core orcjit native support 2>&1 || true
-          echo "=== llvm-config --link-static --system-libs ==="
-          llvm-config --link-static --system-libs 2>&1 || true
-          echo "=== llvm-config --ldflags ==="
-          llvm-config --ldflags
-          echo "=== llvm-config --cppflags ==="
-          llvm-config --cppflags
-          echo "=== Check for static LLVM libs ==="
-          ls /mingw64/lib/libLLVM*.a 2>/dev/null | head -20 || echo "No static LLVM libs found"
-          echo "=== Check for shared LLVM libs ==="
-          ls /mingw64/lib/libLLVM*.dll.a 2>/dev/null | head -10 || echo "No shared LLVM import libs found"
-          ls /mingw64/bin/LLVM*.dll 2>/dev/null | head -10 || echo "No LLVM DLLs found"
-
       - name: Compile
         run: |
           QT5_STATIC="/mingw64/qt5-static"
 
           LLVM_CPPFLAGS="$(llvm-config --cppflags)"
           LLVM_LDFLAGS="$(llvm-config --ldflags)"
-          LLVM_LIBS="$(llvm-config --link-static --libs core orcjit native support 2>/dev/null)" || true
+          LLVM_LIBS="$(llvm-config --link-static --libs core orcjit native support)"
 
-          # Fallback: if --link-static didn't work, try without -static linker flag
-          if [ -z "$LLVM_LIBS" ]; then
-            echo "WARN: --link-static failed, falling back to default libs"
-            LLVM_LIBS="$(llvm-config --libs core orcjit native support)"
-          fi
-
-          LLVM_SYSLIBS="$(llvm-config --link-static --system-libs 2>/dev/null)" || true
-          if [ -z "$LLVM_SYSLIBS" ]; then
-            LLVM_SYSLIBS="$(llvm-config --system-libs)"
-          fi
+          # Get system libs but fix -lzstd.dll to -lzstd for static linking
+          LLVM_SYSLIBS="$(llvm-config --link-static --system-libs)"
+          LLVM_SYSLIBS="${LLVM_SYSLIBS//-lzstd.dll/-lzstd}"
 
           echo "LLVM_CPPFLAGS: ${LLVM_CPPFLAGS}"
           echo "LLVM_LDFLAGS: ${LLVM_LDFLAGS}"
@@ -105,6 +79,7 @@ jobs:
           QT5_LIBS="$QT5_LIBS -lQt5ThemeSupport"
           QT5_LIBS="$QT5_LIBS -lQt5WindowsUIAutomationSupport"
           QT5_LIBS="$QT5_LIBS -lQt5AccessibilitySupport"
+          QT5_LIBS="$QT5_LIBS -lQt5VulkanSupport"
           QT5_LIBS="$QT5_LIBS -lQt5Widgets"
           QT5_LIBS="$QT5_LIBS -lQt5Gui"
           QT5_LIBS="$QT5_LIBS -lQt5Core"
@@ -112,21 +87,18 @@ jobs:
           PLATFORM_LIBS=""
           PLATFORM_LIBS="$PLATFORM_LIBS -lharfbuzz -lfreetype -lbrotlidec -lbrotlicommon -lgraphite2"
           PLATFORM_LIBS="$PLATFORM_LIBS -lpng16 -ljpeg -lz -lzstd -lbz2 -lb2 -lpcre2-16"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lxml2 -liconv -llzma"
+          PLATFORM_LIBS="$PLATFORM_LIBS -ldwrite -ldwmapi"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lwtsapi32"
           PLATFORM_LIBS="$PLATFORM_LIBS -lole32 -loleaut32 -luuid -lcomdlg32"
           PLATFORM_LIBS="$PLATFORM_LIBS -lgdi32 -luser32 -lkernel32 -lshell32"
           PLATFORM_LIBS="$PLATFORM_LIBS -ladvapi32 -lws2_32 -lmswsock"
           PLATFORM_LIBS="$PLATFORM_LIBS -lwinspool -lshlwapi -lversion"
-          PLATFORM_LIBS="$PLATFORM_LIBS -luxtheme -ldwmapi -limm32 -lwinmm"
+          PLATFORM_LIBS="$PLATFORM_LIBS -luxtheme -limm32 -lwinmm"
           PLATFORM_LIBS="$PLATFORM_LIBS -lnetapi32 -luserenv -ldbghelp"
           PLATFORM_LIBS="$PLATFORM_LIBS -ld3d11 -ldxgi -ldxguid"
           PLATFORM_LIBS="$PLATFORM_LIBS -lrpcrt4 -liphlpapi"
-
-          # Determine if we can do fully static
-          STATIC_FLAG="-static"
-          if echo "$LLVM_LIBS" | grep -q "\-lLLVM-"; then
-            echo "WARN: Using monolithic shared LLVM, dropping -static flag"
-            STATIC_FLAG=""
-          fi
+          PLATFORM_LIBS="$PLATFORM_LIBS -lntdll -lpsapi"
 
           g++ -std=c++17 -O2 -DNDEBUG \
             -I"${QT5_STATIC}/include" \
@@ -146,25 +118,10 @@ jobs:
             ${PLATFORM_LIBS} \
             -Wl,--end-group \
             -static-libgcc -static-libstdc++ \
-            ${STATIC_FLAG} \
+            -static \
             -Wl,--subsystem,console
 
           echo "Build complete"
-
-      - name: Copy LLVM DLL if needed
-        run: |
-          # If we linked against shared LLVM, bundle the DLL
-          if ldd claudescript.exe 2>/dev/null | grep -qi "llvm"; then
-            echo "Copying LLVM shared library..."
-            cp /mingw64/bin/LLVM-*.dll . 2>/dev/null || true
-          fi
-          # Copy any other needed MinGW DLLs
-          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
-            if ldd claudescript.exe 2>/dev/null | grep -qi "$dll"; then
-              echo "Copying $dll..."
-              cp "/mingw64/bin/$dll" . 2>/dev/null || true
-            fi
-          done
 
       - name: Verify Binary
         run: |
@@ -179,9 +136,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: claudescript-windows-x64
-          path: |
-            claudescript.exe
-            *.dll
+          path: claudescript.exe
           retention-days: 90
 
   release:
@@ -205,6 +160,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/claudescript.exe
-            dist/*.dll
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
