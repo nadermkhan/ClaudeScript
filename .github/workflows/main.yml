@@ -1,0 +1,151 @@
+name: Build ClaudeScript
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-llvm
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-lld
+            mingw-w64-x86_64-qt5-static
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-freetype
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-libjpeg-turbo
+            mingw-w64-x86_64-harfbuzz
+            mingw-w64-x86_64-pcre2
+            mingw-w64-x86_64-brotli
+            mingw-w64-x86_64-graphite2
+            mingw-w64-x86_64-bzip2
+            mingw-w64-x86_64-libb2
+            make
+            pkg-config
+
+      - name: Generate MOC
+        run: |
+          QT5_STATIC="/mingw64/qt5-static"
+          "${QT5_STATIC}/bin/moc" main.cpp -o main.moc
+
+      - name: Compile
+        run: |
+          QT5_STATIC="/mingw64/qt5-static"
+
+          LLVM_CPPFLAGS="$(llvm-config --cppflags)"
+          LLVM_LDFLAGS="$(llvm-config --ldflags)"
+          LLVM_LIBS="$(llvm-config --libs core orcjit native support)"
+          LLVM_SYSLIBS="$(llvm-config --system-libs)"
+
+          QT5_LIBS=""
+          QT5_LIBS="$QT5_LIBS -L${QT5_STATIC}/lib"
+          QT5_LIBS="$QT5_LIBS -L${QT5_STATIC}/share/qt5/plugins/platforms"
+          QT5_LIBS="$QT5_LIBS -lqwindows"
+          QT5_LIBS="$QT5_LIBS -lQt5EventDispatcherSupport"
+          QT5_LIBS="$QT5_LIBS -lQt5FontDatabaseSupport"
+          QT5_LIBS="$QT5_LIBS -lQt5ThemeSupport"
+          QT5_LIBS="$QT5_LIBS -lQt5WindowsUIAutomationSupport"
+          QT5_LIBS="$QT5_LIBS -lQt5AccessibilitySupport"
+          QT5_LIBS="$QT5_LIBS -lQt5Widgets"
+          QT5_LIBS="$QT5_LIBS -lQt5Gui"
+          QT5_LIBS="$QT5_LIBS -lQt5Core"
+
+          PLATFORM_LIBS=""
+          PLATFORM_LIBS="$PLATFORM_LIBS -lharfbuzz -lfreetype -lbrotlidec -lbrotlicommon -lgraphite2"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lpng16 -ljpeg -lz -lzstd -lbz2 -lb2 -lpcre2-16"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lole32 -loleaut32 -luuid -lcomdlg32"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lgdi32 -luser32 -lkernel32 -lshell32"
+          PLATFORM_LIBS="$PLATFORM_LIBS -ladvapi32 -lws2_32 -lmswsock"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lwinspool -lshlwapi -lversion"
+          PLATFORM_LIBS="$PLATFORM_LIBS -luxtheme -ldwmapi -limm32 -lwinmm"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lnetapi32 -luserenv -ldbghelp"
+          PLATFORM_LIBS="$PLATFORM_LIBS -ld3d11 -ldxgi -ldxguid"
+          PLATFORM_LIBS="$PLATFORM_LIBS -lrpcrt4 -liphlpapi"
+
+          g++ -std=c++17 -O2 -DNDEBUG \
+            -I"${QT5_STATIC}/include" \
+            -I"${QT5_STATIC}/include/QtCore" \
+            -I"${QT5_STATIC}/include/QtGui" \
+            -I"${QT5_STATIC}/include/QtWidgets" \
+            ${LLVM_CPPFLAGS} \
+            -DQT_NO_KEYWORDS \
+            -DQT_STATICPLUGIN \
+            -DQT_STATIC \
+            main.cpp \
+            -o claudescript.exe \
+            ${LLVM_LDFLAGS} \
+            -Wl,--start-group \
+            ${QT5_LIBS} \
+            ${LLVM_LIBS} \
+            ${LLVM_SYSLIBS} \
+            ${PLATFORM_LIBS} \
+            -Wl,--end-group \
+            -static-libgcc -static-libstdc++ \
+            -static \
+            -Wl,--subsystem,console
+
+          echo "Build complete"
+
+      - name: Verify Binary
+        run: |
+          ls -lh claudescript.exe
+          echo "--- Dependency check ---"
+          ldd claudescript.exe 2>&1 || echo "No dynamic dependencies (fully static)"
+          echo "--- Quick test ---"
+          echo 'window("Test", 400, 300, () => { print("hello"); });' > test.cs
+          timeout 5 ./claudescript.exe --emit-ir test.cs || true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudescript-windows-x64
+          path: claudescript.exe
+          retention-days: 90
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: claudescript-windows-x64
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ClaudeScript ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/claudescript.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
