@@ -3203,7 +3203,8 @@ extern "C" const char *rt_float_to_str(double v) {
 class Codegen {
 public:
   Codegen()
-      : ctx_(std::make_unique<llvm::LLVMContext>()), B(*ctx_), cc(0), sc(0) {
+      : ctx_(std::make_unique<llvm::LLVMContext>()), B(*ctx_), cc(0), sc(0),
+        gc(0) {
     M = std::make_unique<llvm::Module>("ClaudeScriptModule", *ctx_);
   }
   bool generate(const WindowStmt &win) {
@@ -3239,11 +3240,16 @@ private:
   std::unique_ptr<llvm::Module> M;
   llvm::Function *mainFn = nullptr;
   llvm::Function *currentFn = nullptr;
-  int cc, sc;
+  int cc, sc, gc;
 
-  // Variable storage: maps variable name -> alloca in current function
+  // Variable storage: maps variable name -> global variable
+  // We use globals so that callbacks (separate LLVM functions) can access them.
+  struct VarInfo {
+    llvm::GlobalVariable *gv;
+    llvm::Type *type;
+  };
   struct VarScope {
-    std::unordered_map<std::string, llvm::AllocaInst *> vars;
+    std::unordered_map<std::string, VarInfo> vars;
   };
   std::vector<VarScope> varScopes;
 
@@ -3253,18 +3259,25 @@ private:
       varScopes.pop_back();
   }
 
-  llvm::AllocaInst *lookupVar(const std::string &name) {
+  VarInfo *lookupVar(const std::string &name) {
     for (int i = (int)varScopes.size() - 1; i >= 0; i--) {
       auto it = varScopes[i].vars.find(name);
       if (it != varScopes[i].vars.end())
-        return it->second;
+        return &it->second;
     }
     return nullptr;
   }
 
-  void declareVar(const std::string &name, llvm::AllocaInst *a) {
-    if (!varScopes.empty())
-      varScopes.back().vars[name] = a;
+  VarInfo &declareVar(const std::string &name, llvm::Type *type,
+                      llvm::Constant *init) {
+    std::string gname = ".var." + name + "." + std::to_string(gc++);
+    auto *gv = new llvm::GlobalVariable(
+        *M, type, false, llvm::GlobalValue::InternalLinkage, init, gname);
+    VarInfo vi{gv, type};
+    if (!varScopes.empty()) {
+      varScopes.back().vars[name] = vi;
+    }
+    return varScopes.back().vars[name];
   }
 
   // All runtime function callees
@@ -3448,19 +3461,14 @@ private:
     currentFn = fn;
     auto *entry = llvm::BasicBlock::Create(*ctx_, "e", fn);
     B.SetInsertPoint(entry);
-    pushScope();
+    // Don't push/pop scope here - callbacks share the parent scope's globals
     for (auto &s : af.body)
       emitNode(*s);
-    popScope();
     B.CreateRetVoid();
     currentFn = savedFn;
     B.SetInsertPoint(sb, si);
     return fn;
   }
-
-  // Emit an expression and return its LLVM value.
-  // Returns i64 for ints/bools, double for floats, ptr for strings.
-  // We track a simple "type tag" via the LLVM type of the result.
 
   llvm::Value *emitExpr(const ASTNode &n) {
     switch (n.kind) {
@@ -3473,12 +3481,11 @@ private:
       return str(static_cast<const StringLitExpr &>(n).value);
     case AK::VarRef: {
       auto &vr = static_cast<const VarRefExpr &>(n);
-      llvm::AllocaInst *a = lookupVar(vr.name);
-      if (!a) {
-        // Undeclared variable - return 0
+      VarInfo *vi = lookupVar(vr.name);
+      if (!vi) {
         return i64(0);
       }
-      return B.CreateLoad(a->getAllocatedType(), a, vr.name);
+      return B.CreateLoad(vi->type, vi->gv, vr.name);
     }
     case AK::BinOp: {
       auto &bo = static_cast<const BinOpExpr &>(n);
@@ -3492,8 +3499,6 @@ private:
       bool lIsFloat = lhs->getType()->isDoubleTy();
       bool rIsFloat = rhs->getType()->isDoubleTy();
 
-      // String concatenation: if either side is a pointer (string) and op is
-      // Add
       if (bo.op == BinOpKind::Add && (lIsPtr || rIsPtr)) {
         if (!lIsPtr)
           lhs = valToStr(lhs);
@@ -3502,7 +3507,6 @@ private:
         return B.CreateCall(fConcat, {lhs, rhs});
       }
 
-      // Float promotion
       if (lIsFloat || rIsFloat) {
         if (!lIsFloat)
           lhs = B.CreateSIToFP(lhs, F64());
@@ -3534,7 +3538,6 @@ private:
         }
       }
 
-      // Integer arithmetic
       switch (bo.op) {
       case BinOpKind::Add:
         return B.CreateAdd(lhs, rhs);
@@ -3581,13 +3584,26 @@ private:
           auto *cmp = B.CreateFCmpOEQ(val, llvm::ConstantFP::get(F64(), 0.0));
           return B.CreateZExt(cmp, I64());
         }
-        auto *cmp = B.CreateICmpEQ(val, i64(0));
-        return B.CreateZExt(cmp, I64());
+        if (val->getType()->isIntegerTy(64)) {
+          auto *cmp = B.CreateICmpEQ(val, i64(0));
+          return B.CreateZExt(cmp, I64());
+        }
+        if (val->getType()->isIntegerTy(32)) {
+          auto *cmp = B.CreateICmpEQ(val, i32(0));
+          return B.CreateZExt(cmp, I64());
+        }
+        return i64(0);
       }
       if (uo.op == UnaryOpKind::Negate) {
         if (val->getType()->isDoubleTy())
           return B.CreateFNeg(val);
-        return B.CreateNeg(val);
+        if (val->getType()->isIntegerTy(64))
+          return B.CreateNeg(val);
+        if (val->getType()->isIntegerTy(32)) {
+          auto *ext = B.CreateSExt(val, I64());
+          return B.CreateNeg(ext);
+        }
+        return i64(0);
       }
       return i64(0);
     }
@@ -3596,36 +3612,36 @@ private:
       auto *id = emitExpr(*fw.idExpr);
       if (!id)
         return i64(-1);
-      return B.CreateCall(fFindWidget, {id});
+      return B.CreateCall(fFindWidget, {valToStr(id)});
     }
     case AK::WidgetGetText: {
       auto &gt = static_cast<const WidgetGetTextExpr &>(n);
       auto *h = emitExpr(*gt.handle);
       if (!h)
         return str("");
-      return B.CreateCall(fGetText, {h});
+      return B.CreateCall(fGetText, {valToI64(h)});
     }
     case AK::WidgetGetSlider: {
       auto &gs = static_cast<const WidgetGetSliderExpr &>(n);
       auto *h = emitExpr(*gs.handle);
       if (!h)
         return llvm::ConstantFP::get(F32(), 0.0);
-      auto *val = B.CreateCall(fGetSlider, {h});
+      auto *val = B.CreateCall(fGetSlider, {valToI64(h)});
       return B.CreateFPExt(val, F64());
     }
     case AK::WidgetGetChecked: {
-      auto &gc = static_cast<const WidgetGetCheckedExpr &>(n);
-      auto *h = emitExpr(*gc.handle);
+      auto &gc2 = static_cast<const WidgetGetCheckedExpr &>(n);
+      auto *h = emitExpr(*gc2.handle);
       if (!h)
         return i64(0);
-      auto *val = B.CreateCall(fGetChecked, {h});
+      auto *val = B.CreateCall(fGetChecked, {valToI64(h)});
       return B.CreateSExt(val, I64());
     }
     case AK::ConfirmBox: {
       auto &cb = static_cast<const ConfirmBoxExpr &>(n);
       auto *t = emitExpr(*cb.title);
       auto *m = emitExpr(*cb.message);
-      auto *val = B.CreateCall(fConfirmBox, {t, m});
+      auto *val = B.CreateCall(fConfirmBox, {valToStr(t), valToStr(m)});
       return B.CreateSExt(val, I64());
     }
     case AK::GetTickMs: {
@@ -3636,19 +3652,18 @@ private:
     }
   }
 
-  // Convert any value to a string pointer
   llvm::Value *valToStr(llvm::Value *v) {
     if (v->getType()->isPointerTy())
       return v;
     if (v->getType()->isDoubleTy())
       return B.CreateCall(fFloatToStr, {v});
-    // i64 or i32
     if (v->getType()->isIntegerTy(32))
       v = B.CreateSExt(v, I64());
-    return B.CreateCall(fIntToStr, {v});
+    if (v->getType()->isIntegerTy(64))
+      return B.CreateCall(fIntToStr, {v});
+    return str("");
   }
 
-  // Convert value to i64 for use in boolean/integer context
   llvm::Value *valToI64(llvm::Value *v) {
     if (v->getType()->isIntegerTy(64))
       return v;
@@ -3657,14 +3672,12 @@ private:
     if (v->getType()->isDoubleTy())
       return B.CreateFPToSI(v, I64());
     if (v->getType()->isPointerTy()) {
-      // Non-null pointer = true (1)
       return B.CreateZExt(B.CreateICmpNE(B.CreatePtrToInt(v, I64()), i64(0)),
                           I64());
     }
     return i64(0);
   }
 
-  // Convert value to i32
   llvm::Value *valToI32(llvm::Value *v) {
     if (v->getType()->isIntegerTy(32))
       return v;
@@ -3675,7 +3688,6 @@ private:
     return i32(0);
   }
 
-  // Convert value to f32
   llvm::Value *valToF32(llvm::Value *v) {
     if (v->getType()->isFloatTy())
       return v;
@@ -3688,7 +3700,6 @@ private:
     return llvm::ConstantFP::get(F32(), 0.0);
   }
 
-  // Convert value to boolean (i1)
   llvm::Value *valToBool(llvm::Value *v) {
     if (v->getType()->isIntegerTy(1))
       return v;
@@ -3830,50 +3841,43 @@ private:
     }
     case AK::VarDecl: {
       auto &vd = static_cast<const VarDeclStmt &>(n);
-      llvm::Function *fn = B.GetInsertBlock()->getParent();
-      // Determine the type from init expression or default to i64
       llvm::Type *varType = I64();
       llvm::Value *initVal = nullptr;
       if (vd.init) {
         initVal = emitExpr(*vd.init);
         varType = initVal->getType();
       }
-      // Create alloca at function entry
-      llvm::IRBuilder<> tmpB(&fn->getEntryBlock(), fn->getEntryBlock().begin());
-      auto *alloca = tmpB.CreateAlloca(varType, nullptr, vd.name);
+      // Create a global variable with appropriate zero initializer
+      llvm::Constant *zeroInit = llvm::Constant::getNullValue(varType);
+      auto &vi = declareVar(vd.name, varType, zeroInit);
+      // Store initial value if present
       if (initVal)
-        B.CreateStore(initVal, alloca);
-      else
-        B.CreateStore(llvm::Constant::getNullValue(varType), alloca);
-      declareVar(vd.name, alloca);
+        B.CreateStore(initVal, vi.gv);
       return true;
     }
     case AK::VarAssign: {
       auto &va = static_cast<const VarAssignStmt &>(n);
-      llvm::AllocaInst *a = lookupVar(va.name);
-      if (!a) {
-        // Auto-declare
-        llvm::Function *fn = B.GetInsertBlock()->getParent();
+      VarInfo *vi = lookupVar(va.name);
+      if (!vi) {
+        // Auto-declare as global
         auto *val = emitExpr(*va.value);
-        llvm::IRBuilder<> tmpB(&fn->getEntryBlock(),
-                               fn->getEntryBlock().begin());
-        a = tmpB.CreateAlloca(val->getType(), nullptr, va.name);
-        B.CreateStore(val, a);
-        declareVar(va.name, a);
+        llvm::Constant *zeroInit = llvm::Constant::getNullValue(val->getType());
+        auto &newVi = declareVar(va.name, val->getType(), zeroInit);
+        B.CreateStore(val, newVi.gv);
       } else {
         auto *val = emitExpr(*va.value);
         // Type coercion if needed
-        if (val->getType() != a->getAllocatedType()) {
-          if (a->getAllocatedType()->isIntegerTy(64))
+        if (val->getType() != vi->type) {
+          if (vi->type->isIntegerTy(64))
             val = valToI64(val);
-          else if (a->getAllocatedType()->isDoubleTy()) {
+          else if (vi->type->isDoubleTy()) {
             if (val->getType()->isIntegerTy())
               val = B.CreateSIToFP(val, F64());
-          } else if (a->getAllocatedType()->isPointerTy()) {
+          } else if (vi->type->isPointerTy()) {
             val = valToStr(val);
           }
         }
-        B.CreateStore(val, a);
+        B.CreateStore(val, vi->gv);
       }
       return true;
     }
@@ -3887,10 +3891,8 @@ private:
         auto &branch = ifn.branches[i];
         if (!branch.condition) {
           // else branch
-          pushScope();
           for (auto &s : branch.body)
             emitNode(*s);
-          popScope();
           B.CreateBr(mergeBB);
         } else {
           auto *condVal = emitExpr(*branch.condition);
@@ -3904,15 +3906,11 @@ private:
           }
           B.CreateCondBr(condBool, thenBB, elseBB);
 
-          // Then block
           B.SetInsertPoint(thenBB);
-          pushScope();
           for (auto &s : branch.body)
             emitNode(*s);
-          popScope();
           B.CreateBr(mergeBB);
 
-          // Set insert point for next branch
           if (elseBB != mergeBB) {
             B.SetInsertPoint(elseBB);
           }
@@ -3925,42 +3923,42 @@ private:
       auto &st = static_cast<const WidgetSetTextStmt &>(n);
       auto *h = emitExpr(*st.handle);
       auto *v = emitExpr(*st.text);
-      B.CreateCall(fSetText, {h, valToStr(v)});
+      B.CreateCall(fSetText, {valToI64(h), valToStr(v)});
       return true;
     }
     case AK::WidgetSetVisible: {
       auto &sv = static_cast<const WidgetSetVisibleStmt &>(n);
       auto *h = emitExpr(*sv.handle);
       auto *v = emitExpr(*sv.value);
-      B.CreateCall(fSetVisible, {h, valToI32(v)});
+      B.CreateCall(fSetVisible, {valToI64(h), valToI32(v)});
       return true;
     }
     case AK::WidgetSetEnabled: {
       auto &se = static_cast<const WidgetSetEnabledStmt &>(n);
       auto *h = emitExpr(*se.handle);
       auto *v = emitExpr(*se.value);
-      B.CreateCall(fSetEnabled, {h, valToI32(v)});
+      B.CreateCall(fSetEnabled, {valToI64(h), valToI32(v)});
       return true;
     }
     case AK::WidgetSetProgress: {
       auto &sp = static_cast<const WidgetSetProgressStmt &>(n);
       auto *h = emitExpr(*sp.handle);
       auto *v = emitExpr(*sp.value);
-      B.CreateCall(fSetProgress, {h, valToF32(v)});
+      B.CreateCall(fSetProgress, {valToI64(h), valToF32(v)});
       return true;
     }
     case AK::WidgetSetSlider: {
       auto &ss = static_cast<const WidgetSetSliderStmt &>(n);
       auto *h = emitExpr(*ss.handle);
       auto *v = emitExpr(*ss.value);
-      B.CreateCall(fSetSlider, {h, valToF32(v)});
+      B.CreateCall(fSetSlider, {valToI64(h), valToF32(v)});
       return true;
     }
     case AK::WidgetSetChecked: {
       auto &sc2 = static_cast<const WidgetSetCheckedStmt &>(n);
       auto *h = emitExpr(*sc2.handle);
       auto *v = emitExpr(*sc2.value);
-      B.CreateCall(fSetChecked, {h, valToI32(v)});
+      B.CreateCall(fSetChecked, {valToI64(h), valToI32(v)});
       return true;
     }
     case AK::MessageBox: {
@@ -3986,8 +3984,8 @@ private:
       return true;
     }
     case AK::SetOnInit: {
-      auto &si = static_cast<const SetOnInitStmt &>(n);
-      B.CreateCall(fSetOnInit, {makeCb(*si.callback)});
+      auto &si2 = static_cast<const SetOnInitStmt &>(n);
+      B.CreateCall(fSetOnInit, {makeCb(*si2.callback)});
       return true;
     }
     case AK::SetOnDestroy: {
