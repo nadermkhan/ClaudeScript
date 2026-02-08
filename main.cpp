@@ -1341,6 +1341,7 @@ enum class TK {
   PipePipe,
   Bang,
   Colon,
+  Question,
   Eof,
   Bad
 };
@@ -1402,6 +1403,8 @@ static const char *tkName(TK k) {
     return "'!'";
   case TK::Colon:
     return "':'";
+  case TK::Question:
+    return "'?'";
   case TK::Eof:
     return "EOF";
   case TK::Bad:
@@ -1468,6 +1471,9 @@ public:
     case ':':
       adv();
       return mkAt(TK::Colon, ":", sl);
+    case '?':
+      adv();
+      return mkAt(TK::Question, "?", sl);
     case '+':
       adv();
       return mkAt(TK::Plus, "+", sl);
@@ -1756,7 +1762,8 @@ enum class AK {
   SetOnResume,
   SetOnPause,
   SetOnBack,
-  Concat
+  Concat,
+  Ternary
 };
 
 struct ASTNode {
@@ -1829,6 +1836,13 @@ struct ConcatExpr : ASTNode {
   ASTPtr left, right;
   ConcatExpr(SourceLoc l, ASTPtr lhs, ASTPtr rhs)
       : ASTNode(AK::Concat, l), left(std::move(lhs)), right(std::move(rhs)) {}
+};
+
+struct TernaryExpr : ASTNode {
+  ASTPtr condition, thenExpr, elseExpr;
+  TernaryExpr(SourceLoc l, ASTPtr cond, ASTPtr t, ASTPtr e)
+      : ASTNode(AK::Ternary, l), condition(std::move(cond)),
+        thenExpr(std::move(t)), elseExpr(std::move(e)) {}
 };
 
 struct FindWidgetExpr : ASTNode {
@@ -2155,8 +2169,26 @@ private:
 
   // ---- Expression parsing (precedence climbing) ----
 
-  ASTPtr parseExpr() { return parseOr(); }
-
+  ASTPtr parseExpr() {
+    auto left = parseOr();
+    if (!left)
+      return nullptr;
+    // Ternary: expr ? then_expr : else_expr
+    if (peek().kind == TK::Question) {
+      Token qTok = next();      // consume '?'
+      auto thenE = parseExpr(); // right-associative: allow nested ternaries
+      if (!thenE)
+        return nullptr;
+      if (!exK(TK::Colon))
+        return nullptr;
+      auto elseE = parseExpr(); // right-associative
+      if (!elseE)
+        return nullptr;
+      return std::make_unique<TernaryExpr>(qTok.loc, std::move(left),
+                                           std::move(thenE), std::move(elseE));
+    }
+    return left;
+  }
   ASTPtr parseOr() {
     auto left = parseAnd();
     if (!left)
@@ -3684,6 +3716,85 @@ private:
     }
     case AK::GetTickMs: {
       return B.CreateCall(fGetTickMs);
+    }
+    case AK::Ternary: {
+      auto &te = static_cast<const TernaryExpr &>(n);
+      // Evaluate condition
+      auto *condVal = emitExpr(*te.condition);
+      auto *condBool = valToBool(condVal);
+
+      llvm::Function *fn = B.GetInsertBlock()->getParent();
+      auto *thenBB = llvm::BasicBlock::Create(*ctx_, "tern.then", fn);
+      auto *elseBB = llvm::BasicBlock::Create(*ctx_, "tern.else", fn);
+      auto *mergeBB = llvm::BasicBlock::Create(*ctx_, "tern.merge", fn);
+
+      B.CreateCondBr(condBool, thenBB, elseBB);
+
+      // Then branch
+      B.SetInsertPoint(thenBB);
+      auto *thenVal = emitExpr(*te.thenExpr);
+      thenBB = B.GetInsertBlock(); // update in case emitExpr added blocks
+      B.CreateBr(mergeBB);
+
+      // Else branch
+      B.SetInsertPoint(elseBB);
+      auto *elseVal = emitExpr(*te.elseExpr);
+      elseBB = B.GetInsertBlock(); // update in case emitExpr added blocks
+      B.CreateBr(mergeBB);
+
+      // Merge: unify types and create PHI
+      B.SetInsertPoint(mergeBB);
+
+      // Type unification: both sides must have the same LLVM type
+      llvm::Type *thenTy = thenVal->getType();
+      llvm::Type *elseTy = elseVal->getType();
+
+      if (thenTy != elseTy) {
+        // If either is a pointer (string), coerce both to pointer
+        if (thenTy->isPointerTy() || elseTy->isPointerTy()) {
+          if (!thenTy->isPointerTy()) {
+            B.SetInsertPoint(thenBB->getTerminator());
+            thenVal = valToStr(thenVal);
+            B.SetInsertPoint(mergeBB);
+          }
+          if (!elseTy->isPointerTy()) {
+            B.SetInsertPoint(elseBB->getTerminator());
+            elseVal = valToStr(elseVal);
+            B.SetInsertPoint(mergeBB);
+          }
+        }
+        // If either is double, coerce both to double
+        else if (thenTy->isDoubleTy() || elseTy->isDoubleTy()) {
+          if (!thenTy->isDoubleTy()) {
+            B.SetInsertPoint(thenBB->getTerminator());
+            thenVal = B.CreateSIToFP(thenVal, F64());
+            B.SetInsertPoint(mergeBB);
+          }
+          if (!elseTy->isDoubleTy()) {
+            B.SetInsertPoint(elseBB->getTerminator());
+            elseVal = B.CreateSIToFP(elseVal, F64());
+            B.SetInsertPoint(mergeBB);
+          }
+        }
+        // If one is i32 and the other i64, coerce to i64
+        else if (thenTy->isIntegerTy() && elseTy->isIntegerTy()) {
+          if (!thenTy->isIntegerTy(64)) {
+            B.SetInsertPoint(thenBB->getTerminator());
+            thenVal = B.CreateSExt(thenVal, I64());
+            B.SetInsertPoint(mergeBB);
+          }
+          if (!elseTy->isIntegerTy(64)) {
+            B.SetInsertPoint(elseBB->getTerminator());
+            elseVal = B.CreateSExt(elseVal, I64());
+            B.SetInsertPoint(mergeBB);
+          }
+        }
+      }
+
+      llvm::PHINode *phi = B.CreatePHI(thenVal->getType(), 2, "tern.result");
+      phi->addIncoming(thenVal, thenBB);
+      phi->addIncoming(elseVal, elseBB);
+      return phi;
     }
     default:
       return i64(0);
