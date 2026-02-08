@@ -333,6 +333,24 @@ static int g_currentActivity = -1;
 static std::recursive_mutex g_widgetMutex;
 static std::atomic<bool> g_shuttingDown{false};
 
+// String pool to keep returned strings alive until window closes
+static std::vector<std::string *> g_stringPool;
+static std::mutex g_stringPoolMutex;
+
+static const char *poolStr(std::string s) {
+  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
+  auto *p = new std::string(std::move(s));
+  g_stringPool.push_back(p);
+  return p->c_str();
+}
+
+static void clearStringPool() {
+  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
+  for (auto *p : g_stringPool)
+    delete p;
+  g_stringPool.clear();
+}
+
 struct TaskInfo {
   std::atomic<bool> completed{false};
   std::recursive_mutex mtx;
@@ -3171,24 +3189,6 @@ private:
     return std::make_unique<SetOnDestroyStmt>(id.loc, std::move(cb));
   }
 };
-
-// String pool to keep returned strings alive until window closes
-static std::vector<std::string *> g_stringPool;
-static std::mutex g_stringPoolMutex;
-
-static const char *poolStr(std::string s) {
-  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
-  auto *p = new std::string(std::move(s));
-  g_stringPool.push_back(p);
-  return p->c_str();
-}
-
-static void clearStringPool() {
-  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
-  for (auto *p : g_stringPool)
-    delete p;
-  g_stringPool.clear();
-}
 
 // Runtime helpers for string concatenation and int-to-string conversion
 extern "C" const char *rt_concat(const char *a, const char *b) {
