@@ -12,8 +12,10 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #include <QCheckBox>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QFont>
 #include <QFrame>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -23,6 +25,7 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #include <QMetaObject>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QSizePolicy>
@@ -30,6 +33,10 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #include <QSpacerItem>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QTextEdit>
 #include <QThread>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -256,6 +263,123 @@ static const char *DARK_STYLESHEET = R"(
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         width: 0px;
     }
+    QComboBox {
+        background-color: #26262A;
+        border: 1px solid #3A3A40;
+        border-radius: 6px;
+        padding: 8px 10px;
+        min-height: 20px;
+        color: #F0F0F0;
+    }
+    QComboBox:hover {
+        border-color: #50505A;
+    }
+    QComboBox::drop-down {
+        border: none;
+        width: 24px;
+    }
+    QComboBox::down-arrow {
+        image: none;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid #A0A0A8;
+        margin-right: 8px;
+    }
+    QComboBox QAbstractItemView {
+        background-color: #26262A;
+        border: 1px solid #3A3A40;
+        color: #F0F0F0;
+        selection-background-color: #0067C0;
+    }
+    QRadioButton {
+        spacing: 8px;
+        color: #F0F0F0;
+    }
+    QRadioButton::indicator {
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        border: 1px solid #3A3A40;
+        background-color: #26262A;
+    }
+    QRadioButton::indicator:hover {
+        border-color: #50505A;
+    }
+    QRadioButton::indicator:checked {
+        background-color: #0067C0;
+        border: none;
+    }
+    QTextEdit {
+        background-color: #26262A;
+        border: 1px solid #3A3A40;
+        border-radius: 6px;
+        padding: 8px 10px;
+        color: #F0F0F0;
+        selection-background-color: #0067C0;
+        selection-color: #FFFFFF;
+    }
+    QTextEdit:focus {
+        border: 2px solid #0067C0;
+    }
+    QTabWidget::pane {
+        border: 1px solid #3A3A40;
+        border-radius: 6px;
+        background-color: #1E1E22;
+        top: -1px;
+    }
+    QTabBar::tab {
+        background-color: #26262A;
+        border: 1px solid #3A3A40;
+        border-bottom: none;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        padding: 8px 20px;
+        color: #A0A0A8;
+        margin-right: 2px;
+    }
+    QTabBar::tab:selected {
+        background-color: #1E1E22;
+        color: #F0F0F0;
+        border-bottom: 2px solid #0067C0;
+    }
+    QTabBar::tab:hover:!selected {
+        background-color: #303036;
+    }
+    QGroupBox {
+        border: 1px solid #3A3A40;
+        border-radius: 6px;
+        margin-top: 12px;
+        padding: 16px 8px 8px 8px;
+        color: #F0F0F0;
+        font-weight: bold;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 8px;
+        color: #A0A0A8;
+    }
+    QTableWidget {
+        background-color: #1E1E22;
+        border: 1px solid #3A3A40;
+        border-radius: 6px;
+        gridline-color: #2D2D32;
+        color: #F0F0F0;
+        selection-background-color: #0067C0;
+    }
+    QTableWidget::item {
+        padding: 4px 8px;
+    }
+    QTableWidget::item:alternate {
+        background-color: #22222A;
+    }
+    QHeaderView::section {
+        background-color: #26262A;
+        color: #A0A0A8;
+        border: 1px solid #3A3A40;
+        padding: 6px 8px;
+        font-weight: bold;
+    }
 )";
 
 enum CSWidgetType {
@@ -268,7 +392,15 @@ enum CSWidgetType {
   CS_SLIDER,
   CS_PROGRESS,
   CS_SEPARATOR,
-  CS_SPACER
+  CS_SPACER,
+  CS_DROPDOWN,
+  CS_RADIO,
+  CS_TEXTAREA,
+  CS_IMAGE,
+  CS_TABS,
+  CS_SCROLL,
+  CS_GROUP,
+  CS_TABLE
 };
 
 struct CSWidget {
@@ -1807,7 +1939,80 @@ enum class AK {
   Return,
   RegisterWindow,
   Navigate,
-  StartWindow
+  StartWindow,
+  Dropdown,
+  DropdownAddItem,
+  DropdownClear,
+  DropdownGetIndex,
+  DropdownSetIndex,
+  DropdownGetText,
+  Radio,
+  Textarea,
+  TextareaSetText,
+  TextareaGetText,
+  Image,
+  ImageSetSource,
+  ImageSetSize,
+  TabView,
+  TabAdd,
+  TabSetCurrent,
+  TabGetCurrent,
+  TabBegin,
+  TabEnd,
+  ScrollArea,
+  ScrollBegin,
+  ScrollEnd,
+  GroupBox,
+  GroupBegin,
+  GroupEnd,
+  Table,
+  TableSetHeader,
+  TableSetCell,
+  TableGetCell,
+  TableSetRows,
+  TableSetCols,
+  SetTimer,
+  ClearTimer,
+  SetInterval,
+  ClearInterval,
+  SetTimeout,
+  ClearTimeout,
+  WidgetSetMinSize,
+  WidgetSetMaxSize,
+  WidgetSetFixedSize,
+  WidgetSetTooltip,
+  WidgetSetStyle,
+  WidgetSetPadding,
+  WidgetRemove,
+  StrLen,
+  StrSub,
+  StrFind,
+  StrReplace,
+  StrTrim,
+  StrUpper,
+  StrLower,
+  StrStartsWith,
+  StrEndsWith,
+  StrContains,
+  StrCharAt,
+  MathSqrt,
+  MathSin,
+  MathCos,
+  MathTan,
+  MathAbs,
+  MathFloor,
+  MathCeil,
+  MathRound,
+  MathPow,
+  MathLog,
+  MathMin,
+  MathMax,
+  MathRandom,
+  MathPi,
+  ToInt,
+  ToFloat,
+  ParseInt,
+  ParseFloat
 };
 
 struct ASTNode {
@@ -2262,6 +2467,287 @@ struct WindowStmt : ASTNode {
       : ASTNode(AK::Window, l), title(std::move(t)), width(w), height(h) {}
 };
 
+struct DropdownStmt : ASTNode {
+  std::vector<MCall> methods;
+  DropdownStmt(SourceLoc l) : ASTNode(AK::Dropdown, l) {}
+};
+
+struct DropdownAddItemStmt : ASTNode {
+  ASTPtr handle, text;
+  DropdownAddItemStmt(SourceLoc l, ASTPtr h, ASTPtr t)
+      : ASTNode(AK::DropdownAddItem, l), handle(std::move(h)),
+        text(std::move(t)) {}
+};
+
+struct DropdownClearStmt : ASTNode {
+  ASTPtr handle;
+  DropdownClearStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::DropdownClear, l), handle(std::move(h)) {}
+};
+
+struct DropdownGetIndexExpr : ASTNode {
+  ASTPtr handle;
+  DropdownGetIndexExpr(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::DropdownGetIndex, l), handle(std::move(h)) {}
+};
+
+struct DropdownSetIndexStmt : ASTNode {
+  ASTPtr handle, index;
+  DropdownSetIndexStmt(SourceLoc l, ASTPtr h, ASTPtr i)
+      : ASTNode(AK::DropdownSetIndex, l), handle(std::move(h)),
+        index(std::move(i)) {}
+};
+
+struct DropdownGetTextExpr : ASTNode {
+  ASTPtr handle;
+  DropdownGetTextExpr(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::DropdownGetText, l), handle(std::move(h)) {}
+};
+
+struct RadioStmt : ASTNode {
+  ASTPtr textExpr;
+  std::vector<MCall> methods;
+  RadioStmt(SourceLoc l, ASTPtr t)
+      : ASTNode(AK::Radio, l), textExpr(std::move(t)) {}
+};
+
+struct TextareaStmt : ASTNode {
+  ASTPtr hintExpr;
+  std::vector<MCall> methods;
+  TextareaStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::Textarea, l), hintExpr(std::move(h)) {}
+};
+
+struct TextareaSetTextStmt : ASTNode {
+  ASTPtr handle, text;
+  TextareaSetTextStmt(SourceLoc l, ASTPtr h, ASTPtr t)
+      : ASTNode(AK::TextareaSetText, l), handle(std::move(h)),
+        text(std::move(t)) {}
+};
+
+struct TextareaGetTextExpr : ASTNode {
+  ASTPtr handle;
+  TextareaGetTextExpr(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::TextareaGetText, l), handle(std::move(h)) {}
+};
+
+struct ImageStmt : ASTNode {
+  ASTPtr pathExpr;
+  std::vector<MCall> methods;
+  ImageStmt(SourceLoc l, ASTPtr p)
+      : ASTNode(AK::Image, l), pathExpr(std::move(p)) {}
+};
+
+struct ImageSetSourceStmt : ASTNode {
+  ASTPtr handle, path;
+  ImageSetSourceStmt(SourceLoc l, ASTPtr h, ASTPtr p)
+      : ASTNode(AK::ImageSetSource, l), handle(std::move(h)),
+        path(std::move(p)) {}
+};
+
+struct ImageSetSizeStmt : ASTNode {
+  ASTPtr handle, width, height;
+  ImageSetSizeStmt(SourceLoc l, ASTPtr h, ASTPtr w, ASTPtr ht)
+      : ASTNode(AK::ImageSetSize, l), handle(std::move(h)), width(std::move(w)),
+        height(std::move(ht)) {}
+};
+
+struct TabViewStmt : ASTNode {
+  std::vector<MCall> methods;
+  TabViewStmt(SourceLoc l) : ASTNode(AK::TabView, l) {}
+};
+
+struct TabAddStmt : ASTNode {
+  ASTPtr handle, title;
+  TabAddStmt(SourceLoc l, ASTPtr h, ASTPtr t)
+      : ASTNode(AK::TabAdd, l), handle(std::move(h)), title(std::move(t)) {}
+};
+
+struct TabSetCurrentStmt : ASTNode {
+  ASTPtr handle, index;
+  TabSetCurrentStmt(SourceLoc l, ASTPtr h, ASTPtr i)
+      : ASTNode(AK::TabSetCurrent, l), handle(std::move(h)),
+        index(std::move(i)) {}
+};
+
+struct TabGetCurrentExpr : ASTNode {
+  ASTPtr handle;
+  TabGetCurrentExpr(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::TabGetCurrent, l), handle(std::move(h)) {}
+};
+
+struct TabBeginStmt : ASTNode {
+  ASTPtr handle, index;
+  TabBeginStmt(SourceLoc l, ASTPtr h, ASTPtr i)
+      : ASTNode(AK::TabBegin, l), handle(std::move(h)), index(std::move(i)) {}
+};
+
+struct TabEndStmt : ASTNode {
+  TabEndStmt(SourceLoc l) : ASTNode(AK::TabEnd, l) {}
+};
+
+struct ScrollAreaStmt : ASTNode {
+  std::vector<MCall> methods;
+  ScrollAreaStmt(SourceLoc l) : ASTNode(AK::ScrollArea, l) {}
+};
+
+struct ScrollBeginStmt : ASTNode {
+  ASTPtr handle;
+  ScrollBeginStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::ScrollBegin, l), handle(std::move(h)) {}
+};
+
+struct ScrollEndStmt : ASTNode {
+  ScrollEndStmt(SourceLoc l) : ASTNode(AK::ScrollEnd, l) {}
+};
+
+struct GroupBoxStmt : ASTNode {
+  ASTPtr titleExpr;
+  std::vector<MCall> methods;
+  GroupBoxStmt(SourceLoc l, ASTPtr t)
+      : ASTNode(AK::GroupBox, l), titleExpr(std::move(t)) {}
+};
+
+struct GroupBeginStmt : ASTNode {
+  ASTPtr handle;
+  GroupBeginStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::GroupBegin, l), handle(std::move(h)) {}
+};
+
+struct GroupEndStmt : ASTNode {
+  GroupEndStmt(SourceLoc l) : ASTNode(AK::GroupEnd, l) {}
+};
+
+struct TableStmt : ASTNode {
+  ASTPtr rows, cols;
+  std::vector<MCall> methods;
+  TableStmt(SourceLoc l, ASTPtr r, ASTPtr c)
+      : ASTNode(AK::Table, l), rows(std::move(r)), cols(std::move(c)) {}
+};
+
+struct TableSetHeaderStmt : ASTNode {
+  ASTPtr handle, col, text;
+  TableSetHeaderStmt(SourceLoc l, ASTPtr h, ASTPtr c, ASTPtr t)
+      : ASTNode(AK::TableSetHeader, l), handle(std::move(h)), col(std::move(c)),
+        text(std::move(t)) {}
+};
+
+struct TableSetCellStmt : ASTNode {
+  ASTPtr handle, row, col, text;
+  TableSetCellStmt(SourceLoc l, ASTPtr h, ASTPtr r, ASTPtr c, ASTPtr t)
+      : ASTNode(AK::TableSetCell, l), handle(std::move(h)), row(std::move(r)),
+        col(std::move(c)), text(std::move(t)) {}
+};
+
+struct TableGetCellExpr : ASTNode {
+  ASTPtr handle, row, col;
+  TableGetCellExpr(SourceLoc l, ASTPtr h, ASTPtr r, ASTPtr c)
+      : ASTNode(AK::TableGetCell, l), handle(std::move(h)), row(std::move(r)),
+        col(std::move(c)) {}
+};
+
+struct TableSetRowsStmt : ASTNode {
+  ASTPtr handle, rows;
+  TableSetRowsStmt(SourceLoc l, ASTPtr h, ASTPtr r)
+      : ASTNode(AK::TableSetRows, l), handle(std::move(h)), rows(std::move(r)) {
+  }
+};
+
+struct TableSetColsStmt : ASTNode {
+  ASTPtr handle, cols;
+  TableSetColsStmt(SourceLoc l, ASTPtr h, ASTPtr c)
+      : ASTNode(AK::TableSetCols, l), handle(std::move(h)), cols(std::move(c)) {
+  }
+};
+
+struct SetTimerStmt : ASTNode {
+  ASTPtr ms;
+  std::unique_ptr<ArrowFunc> callback;
+  SetTimerStmt(SourceLoc l, ASTPtr m, std::unique_ptr<ArrowFunc> cb)
+      : ASTNode(AK::SetTimer, l), ms(std::move(m)), callback(std::move(cb)) {}
+};
+
+struct ClearTimerStmt : ASTNode {
+  ASTPtr handle;
+  ClearTimerStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::ClearTimer, l), handle(std::move(h)) {}
+};
+
+struct SetIntervalExpr : ASTNode {
+  ASTPtr ms;
+  std::unique_ptr<ArrowFunc> callback;
+  SetIntervalExpr(SourceLoc l, ASTPtr m, std::unique_ptr<ArrowFunc> cb)
+      : ASTNode(AK::SetInterval, l), ms(std::move(m)), callback(std::move(cb)) {
+  }
+};
+
+struct SetTimeoutExpr : ASTNode {
+  ASTPtr ms;
+  std::unique_ptr<ArrowFunc> callback;
+  SetTimeoutExpr(SourceLoc l, ASTPtr m, std::unique_ptr<ArrowFunc> cb)
+      : ASTNode(AK::SetTimeout, l), ms(std::move(m)), callback(std::move(cb)) {}
+};
+
+struct BuiltinOneArgExpr : ASTNode {
+  ASTPtr arg;
+  BuiltinOneArgExpr(AK k, SourceLoc l, ASTPtr a)
+      : ASTNode(k, l), arg(std::move(a)) {}
+};
+
+struct BuiltinTwoArgExpr : ASTNode {
+  ASTPtr arg1, arg2;
+  BuiltinTwoArgExpr(AK k, SourceLoc l, ASTPtr a, ASTPtr b)
+      : ASTNode(k, l), arg1(std::move(a)), arg2(std::move(b)) {}
+};
+
+struct BuiltinThreeArgExpr : ASTNode {
+  ASTPtr arg1, arg2, arg3;
+  BuiltinThreeArgExpr(AK k, SourceLoc l, ASTPtr a, ASTPtr b, ASTPtr c)
+      : ASTNode(k, l), arg1(std::move(a)), arg2(std::move(b)),
+        arg3(std::move(c)) {}
+};
+
+struct WidgetSetMinSizeStmt : ASTNode {
+  ASTPtr handle, w, h;
+  WidgetSetMinSizeStmt(SourceLoc l, ASTPtr hh, ASTPtr ww, ASTPtr hhh)
+      : ASTNode(AK::WidgetSetMinSize, l), handle(std::move(hh)),
+        w(std::move(ww)), h(std::move(hhh)) {}
+};
+
+struct WidgetSetMaxSizeStmt : ASTNode {
+  ASTPtr handle, w, h;
+  WidgetSetMaxSizeStmt(SourceLoc l, ASTPtr hh, ASTPtr ww, ASTPtr hhh)
+      : ASTNode(AK::WidgetSetMaxSize, l), handle(std::move(hh)),
+        w(std::move(ww)), h(std::move(hhh)) {}
+};
+
+struct WidgetSetFixedSizeStmt : ASTNode {
+  ASTPtr handle, w, h;
+  WidgetSetFixedSizeStmt(SourceLoc l, ASTPtr hh, ASTPtr ww, ASTPtr hhh)
+      : ASTNode(AK::WidgetSetFixedSize, l), handle(std::move(hh)),
+        w(std::move(ww)), h(std::move(hhh)) {}
+};
+
+struct WidgetSetTooltipStmt : ASTNode {
+  ASTPtr handle, text;
+  WidgetSetTooltipStmt(SourceLoc l, ASTPtr h, ASTPtr t)
+      : ASTNode(AK::WidgetSetTooltip, l), handle(std::move(h)),
+        text(std::move(t)) {}
+};
+
+struct WidgetSetStyleStmt : ASTNode {
+  ASTPtr handle, css;
+  WidgetSetStyleStmt(SourceLoc l, ASTPtr h, ASTPtr c)
+      : ASTNode(AK::WidgetSetStyle, l), handle(std::move(h)),
+        css(std::move(c)) {}
+};
+
+struct WidgetRemoveStmt : ASTNode {
+  ASTPtr handle;
+  WidgetRemoveStmt(SourceLoc l, ASTPtr h)
+      : ASTNode(AK::WidgetRemove, l), handle(std::move(h)) {}
+};
+
 class Parser {
 public:
   explicit Parser(Lexer &l) : lex_(l), bad_(false) {}
@@ -2350,42 +2836,137 @@ private:
   }
 
   bool isKeyword(const std::string &s) {
-    static const std::vector<std::string> kw = {
-        "window",       "button",
-        "label",        "input",
-        "checkbox",     "toggle",
-        "slider",       "progress",
-        "separator",    "spacer",
-        "column",       "row",
-        "print",        "task",
-        "var",          "if",
-        "else",         "true",
-        "false",        "set_text",
-        "get_text",     "set_visible",
-        "set_enabled",  "set_progress",
-        "set_slider",   "get_slider",
-        "set_checked",  "get_checked",
-        "find_widget",  "message_box",
-        "confirm_box",  "sleep_ms",
-        "get_tick_ms",  "finish_activity",
-        "post_to_ui",   "on_init",
-        "on_destroy",   "on_resume",
-        "on_pause",     "on_back",
-        "while",        "for",
-        "array_new",    "array_push",
-        "array_get",    "array_set",
-        "array_length", "array_pop",
-        "array_clear",  "array_remove",
-        "array_insert", "fn",
-        "return",       "navigate",
-        "start_window", "screen",
-        "parse_int",    "parse_float"};
+    static const std::vector<std::string> kw = {"window",
+                                                "button",
+                                                "label",
+                                                "input",
+                                                "checkbox",
+                                                "toggle",
+                                                "slider",
+                                                "progress",
+                                                "separator",
+                                                "spacer",
+                                                "column",
+                                                "row",
+                                                "print",
+                                                "task",
+                                                "var",
+                                                "if",
+                                                "else",
+                                                "true",
+                                                "false",
+                                                "set_text",
+                                                "get_text",
+                                                "set_visible",
+                                                "set_enabled",
+                                                "set_progress",
+                                                "set_slider",
+                                                "get_slider",
+                                                "set_checked",
+                                                "get_checked",
+                                                "find_widget",
+                                                "message_box",
+                                                "confirm_box",
+                                                "sleep_ms",
+                                                "get_tick_ms",
+                                                "finish_activity",
+                                                "post_to_ui",
+                                                "on_init",
+                                                "on_destroy",
+                                                "on_resume",
+                                                "on_pause",
+                                                "on_back",
+                                                "while",
+                                                "for",
+                                                "array_new",
+                                                "array_push",
+                                                "array_get",
+                                                "array_set",
+                                                "array_length",
+                                                "array_pop",
+                                                "array_clear",
+                                                "array_remove",
+                                                "array_insert",
+                                                "fn",
+                                                "return",
+                                                "navigate",
+                                                "start_window",
+                                                "screen",
+                                                "parse_int",
+                                                "parse_float",
+                                                "dropdown",
+                                                "dropdown_add",
+                                                "dropdown_clear",
+                                                "dropdown_index",
+                                                "dropdown_set_index",
+                                                "dropdown_text",
+                                                "radio",
+                                                "textarea",
+                                                "textarea_set",
+                                                "textarea_get",
+                                                "image",
+                                                "image_set_src",
+                                                "image_set_size",
+                                                "tab_view",
+                                                "tab_add",
+                                                "tab_set_current",
+                                                "tab_get_current",
+                                                "tab_begin",
+                                                "tab_end",
+                                                "scroll_area",
+                                                "scroll_begin",
+                                                "scroll_end",
+                                                "group_box",
+                                                "group_begin",
+                                                "group_end",
+                                                "table",
+                                                "table_set_header",
+                                                "table_set_cell",
+                                                "table_get_cell",
+                                                "table_set_rows",
+                                                "table_set_cols",
+                                                "set_interval",
+                                                "clear_interval",
+                                                "set_timeout",
+                                                "clear_timeout",
+                                                "set_min_size",
+                                                "set_max_size",
+                                                "set_fixed_size",
+                                                "set_tooltip",
+                                                "set_style",
+                                                "widget_remove",
+                                                "str_len",
+                                                "str_sub",
+                                                "str_find",
+                                                "str_replace",
+                                                "str_trim",
+                                                "str_upper",
+                                                "str_lower",
+                                                "str_starts_with",
+                                                "str_ends_with",
+                                                "str_contains",
+                                                "str_char_at",
+                                                "math_sqrt",
+                                                "math_sin",
+                                                "math_cos",
+                                                "math_tan",
+                                                "math_abs",
+                                                "math_floor",
+                                                "math_ceil",
+                                                "math_round",
+                                                "math_pow",
+                                                "math_log",
+                                                "math_min",
+                                                "math_max",
+                                                "math_random",
+                                                "math_pi",
+                                                "to_int",
+                                                "to_float"};
     for (auto &k : kw)
       if (s == k)
         return true;
     return false;
   }
-
   // ---- Expression parsing (precedence climbing) ----
 
   ASTPtr parseExpr() {
@@ -2781,8 +3362,391 @@ private:
         fc->args.push_back(std::move(arg));
         return fc;
       }
-      // Variable reference
-      // Function call: identifier followed by '('
+      if (p.text == "dropdown_index") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto h = parseExpr();
+        if (!h)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<DropdownGetIndexExpr>(p.loc, std::move(h));
+      }
+      if (p.text == "dropdown_text") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto h = parseExpr();
+        if (!h)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<DropdownGetTextExpr>(p.loc, std::move(h));
+      }
+      if (p.text == "textarea_get") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto h = parseExpr();
+        if (!h)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<TextareaGetTextExpr>(p.loc, std::move(h));
+      }
+      if (p.text == "tab_get_current") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto h = parseExpr();
+        if (!h)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<TabGetCurrentExpr>(p.loc, std::move(h));
+      }
+      if (p.text == "table_get_cell") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto h = parseExpr();
+        if (!h)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto r = parseExpr();
+        if (!r)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto c = parseExpr();
+        if (!c)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<TableGetCellExpr>(p.loc, std::move(h),
+                                                  std::move(r), std::move(c));
+      }
+      if (p.text == "set_interval") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto ms = parseExpr();
+        if (!ms)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto cb = parseArrow();
+        if (!cb)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<SetIntervalExpr>(p.loc, std::move(ms),
+                                                 std::move(cb));
+      }
+      if (p.text == "set_timeout") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto ms = parseExpr();
+        if (!ms)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto cb = parseArrow();
+        if (!cb)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<SetTimeoutExpr>(p.loc, std::move(ms),
+                                                std::move(cb));
+      }
+      if (p.text == "str_len") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::StrLen, p.loc,
+                                                   std::move(a));
+      }
+      if (p.text == "str_sub") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto c = parseExpr();
+        if (!c)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinThreeArgExpr>(
+            AK::StrSub, p.loc, std::move(a), std::move(b), std::move(c));
+      }
+      if (p.text == "str_find") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::StrFind, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "str_replace") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto c = parseExpr();
+        if (!c)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinThreeArgExpr>(
+            AK::StrReplace, p.loc, std::move(a), std::move(b), std::move(c));
+      }
+      if (p.text == "str_trim") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::StrTrim, p.loc,
+                                                   std::move(a));
+      }
+      if (p.text == "str_upper") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::StrUpper, p.loc,
+                                                   std::move(a));
+      }
+      if (p.text == "str_lower") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::StrLower, p.loc,
+                                                   std::move(a));
+      }
+      if (p.text == "str_starts_with") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::StrStartsWith, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "str_ends_with") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::StrEndsWith, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "str_contains") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::StrContains, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "str_char_at") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::StrCharAt, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "math_sqrt" || p.text == "math_sin" ||
+          p.text == "math_cos" || p.text == "math_tan" ||
+          p.text == "math_abs" || p.text == "math_floor" ||
+          p.text == "math_ceil" || p.text == "math_round" ||
+          p.text == "math_log") {
+        AK kind;
+        if (p.text == "math_sqrt")
+          kind = AK::MathSqrt;
+        else if (p.text == "math_sin")
+          kind = AK::MathSin;
+        else if (p.text == "math_cos")
+          kind = AK::MathCos;
+        else if (p.text == "math_tan")
+          kind = AK::MathTan;
+        else if (p.text == "math_abs")
+          kind = AK::MathAbs;
+        else if (p.text == "math_floor")
+          kind = AK::MathFloor;
+        else if (p.text == "math_ceil")
+          kind = AK::MathCeil;
+        else if (p.text == "math_round")
+          kind = AK::MathRound;
+        else
+          kind = AK::MathLog;
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(kind, p.loc, std::move(a));
+      }
+      if (p.text == "math_pow" || p.text == "math_min" ||
+          p.text == "math_max") {
+        AK kind;
+        if (p.text == "math_pow")
+          kind = AK::MathPow;
+        else if (p.text == "math_min")
+          kind = AK::MathMin;
+        else
+          kind = AK::MathMax;
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(kind, p.loc, std::move(a),
+                                                   std::move(b));
+      }
+      if (p.text == "math_random") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto b = parseExpr();
+        if (!b)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinTwoArgExpr>(AK::MathRandom, p.loc,
+                                                   std::move(a), std::move(b));
+      }
+      if (p.text == "math_pi") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::MathPi, p.loc, nullptr);
+      }
+      if (p.text == "to_int") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::ToInt, p.loc,
+                                                   std::move(a));
+      }
+      if (p.text == "to_float") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto a = parseExpr();
+        if (!a)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<BuiltinOneArgExpr>(AK::ToFloat, p.loc,
+                                                   std::move(a));
+      }
       if (!isKeyword(p.text)) {
         // Peek ahead to see if this is a function call
         Token p2 = peek2();
@@ -2925,6 +3889,74 @@ private:
       return parseNavigate();
     if (p.text == "start_window")
       return parseStartWindow();
+    if (p.text == "dropdown")
+      return parseDropdown();
+    if (p.text == "dropdown_add")
+      return parseDropdownAdd();
+    if (p.text == "dropdown_clear")
+      return parseDropdownClear();
+    if (p.text == "dropdown_set_index")
+      return parseDropdownSetIndex();
+    if (p.text == "radio")
+      return parseRadio();
+    if (p.text == "textarea")
+      return parseTextarea();
+    if (p.text == "textarea_set")
+      return parseTextareaSet();
+    if (p.text == "image")
+      return parseImageStmt();
+    if (p.text == "image_set_src")
+      return parseImageSetSrc();
+    if (p.text == "image_set_size")
+      return parseImageSetSize();
+    if (p.text == "tab_view")
+      return parseTabView();
+    if (p.text == "tab_add")
+      return parseTabAdd();
+    if (p.text == "tab_set_current")
+      return parseTabSetCurrent();
+    if (p.text == "tab_begin")
+      return parseTabBegin();
+    if (p.text == "tab_end")
+      return parseTabEnd();
+    if (p.text == "scroll_area")
+      return parseScrollArea();
+    if (p.text == "scroll_begin")
+      return parseScrollBegin();
+    if (p.text == "scroll_end")
+      return parseScrollEnd();
+    if (p.text == "group_box")
+      return parseGroupBox();
+    if (p.text == "group_begin")
+      return parseGroupBegin();
+    if (p.text == "group_end")
+      return parseGroupEnd();
+    if (p.text == "table")
+      return parseTable();
+    if (p.text == "table_set_header")
+      return parseTableSetHeader();
+    if (p.text == "table_set_cell")
+      return parseTableSetCell();
+    if (p.text == "table_set_rows")
+      return parseTableSetRows();
+    if (p.text == "table_set_cols")
+      return parseTableSetCols();
+    if (p.text == "clear_interval")
+      return parseClearInterval();
+    if (p.text == "clear_timeout")
+      return parseClearTimeout();
+    if (p.text == "set_min_size")
+      return parseSetMinSize();
+    if (p.text == "set_max_size")
+      return parseSetMaxSize();
+    if (p.text == "set_fixed_size")
+      return parseSetFixedSize();
+    if (p.text == "set_tooltip")
+      return parseSetTooltip();
+    if (p.text == "set_style")
+      return parseSetStyle();
+    if (p.text == "widget_remove")
+      return parseWidgetRemove();
 
     // Check if it's a variable assignment: identifier = expr;
     Token p2 = peek2();
@@ -4061,6 +5093,586 @@ private:
       return nullptr;
     return std::make_unique<StartWindowStmt>(kw.loc, std::move(target));
   }
+  ASTPtr parseDropdown() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<DropdownStmt>(id.loc);
+    parseWidgetMethods(n->methods, {"id", "onChange", "expand"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseDropdownAdd() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<DropdownAddItemStmt>(id.loc, std::move(h),
+                                                 std::move(t));
+  }
+  ASTPtr parseDropdownClear() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<DropdownClearStmt>(id.loc, std::move(h));
+  }
+  ASTPtr parseDropdownSetIndex() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto i = parseExpr();
+    if (!i)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<DropdownSetIndexStmt>(id.loc, std::move(h),
+                                                  std::move(i));
+  }
+  ASTPtr parseRadio() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<RadioStmt>(id.loc, std::move(t));
+    parseWidgetMethods(n->methods, {"id", "onChange"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseTextarea() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<TextareaStmt>(id.loc, std::move(h));
+    parseWidgetMethods(n->methods, {"id", "onChange", "expand"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseTextareaSet() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TextareaSetTextStmt>(id.loc, std::move(h),
+                                                 std::move(t));
+  }
+  ASTPtr parseImageStmt() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto p2 = parseExpr();
+    if (!p2)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<ImageStmt>(id.loc, std::move(p2));
+    parseWidgetMethods(n->methods, {"id"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseImageSetSrc() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto p2 = parseExpr();
+    if (!p2)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ImageSetSourceStmt>(id.loc, std::move(h),
+                                                std::move(p2));
+  }
+  ASTPtr parseImageSetSize() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto w = parseExpr();
+    if (!w)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto ht = parseExpr();
+    if (!ht)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ImageSetSizeStmt>(id.loc, std::move(h),
+                                              std::move(w), std::move(ht));
+  }
+  ASTPtr parseTabView() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<TabViewStmt>(id.loc);
+    parseWidgetMethods(n->methods, {"id", "onChange"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseTabAdd() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TabAddStmt>(id.loc, std::move(h), std::move(t));
+  }
+  ASTPtr parseTabSetCurrent() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto i = parseExpr();
+    if (!i)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TabSetCurrentStmt>(id.loc, std::move(h),
+                                               std::move(i));
+  }
+  ASTPtr parseTabBegin() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto i = parseExpr();
+    if (!i)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TabBeginStmt>(id.loc, std::move(h), std::move(i));
+  }
+  ASTPtr parseTabEnd() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TabEndStmt>(id.loc);
+  }
+  ASTPtr parseScrollArea() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<ScrollAreaStmt>(id.loc);
+    parseWidgetMethods(n->methods, {"id"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseScrollBegin() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ScrollBeginStmt>(id.loc, std::move(h));
+  }
+  ASTPtr parseScrollEnd() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ScrollEndStmt>(id.loc);
+  }
+  ASTPtr parseGroupBox() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<GroupBoxStmt>(id.loc, std::move(t));
+    parseWidgetMethods(n->methods, {"id"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseGroupBegin() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<GroupBeginStmt>(id.loc, std::move(h));
+  }
+  ASTPtr parseGroupEnd() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<GroupEndStmt>(id.loc);
+  }
+  ASTPtr parseTable() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto r = parseExpr();
+    if (!r)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto c = parseExpr();
+    if (!c)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto n = std::make_unique<TableStmt>(id.loc, std::move(r), std::move(c));
+    parseWidgetMethods(n->methods, {"id"});
+    if (!exK(TK::Semi))
+      return nullptr;
+    return n;
+  }
+  ASTPtr parseTableSetHeader() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto c = parseExpr();
+    if (!c)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TableSetHeaderStmt>(id.loc, std::move(h),
+                                                std::move(c), std::move(t));
+  }
+  ASTPtr parseTableSetCell() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto r = parseExpr();
+    if (!r)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto c = parseExpr();
+    if (!c)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TableSetCellStmt>(
+        id.loc, std::move(h), std::move(r), std::move(c), std::move(t));
+  }
+  ASTPtr parseTableSetRows() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto r = parseExpr();
+    if (!r)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TableSetRowsStmt>(id.loc, std::move(h),
+                                              std::move(r));
+  }
+  ASTPtr parseTableSetCols() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto c = parseExpr();
+    if (!c)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<TableSetColsStmt>(id.loc, std::move(h),
+                                              std::move(c));
+  }
+  ASTPtr parseClearInterval() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ClearTimerStmt>(id.loc, std::move(h));
+  }
+  ASTPtr parseClearTimeout() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ClearTimerStmt>(id.loc, std::move(h));
+  }
+  ASTPtr parseSetMinSize() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto w = parseExpr();
+    if (!w)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto ht = parseExpr();
+    if (!ht)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetSetMinSizeStmt>(id.loc, std::move(h),
+                                                  std::move(w), std::move(ht));
+  }
+  ASTPtr parseSetMaxSize() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto w = parseExpr();
+    if (!w)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto ht = parseExpr();
+    if (!ht)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetSetMaxSizeStmt>(id.loc, std::move(h),
+                                                  std::move(w), std::move(ht));
+  }
+  ASTPtr parseSetFixedSize() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto w = parseExpr();
+    if (!w)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto ht = parseExpr();
+    if (!ht)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetSetFixedSizeStmt>(
+        id.loc, std::move(h), std::move(w), std::move(ht));
+  }
+  ASTPtr parseSetTooltip() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto t = parseExpr();
+    if (!t)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetSetTooltipStmt>(id.loc, std::move(h),
+                                                  std::move(t));
+  }
+  ASTPtr parseSetStyle() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto s = parseExpr();
+    if (!s)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetSetStyleStmt>(id.loc, std::move(h),
+                                                std::move(s));
+  }
+  ASTPtr parseWidgetRemove() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto h = parseExpr();
+    if (!h)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<WidgetRemoveStmt>(id.loc, std::move(h));
+  }
 };
 
 // Runtime helpers for string concatenation and int-to-string conversion
@@ -4327,6 +5939,840 @@ extern "C" void rt_navigate(const char *name) {
 
 extern "C" void rt_start_window(const char *name) { rt_navigate(name); }
 
+extern "C" long long rt_create_dropdown(void) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *combo = new QComboBox();
+  combo->setCursor(Qt::PointingHandCursor);
+  combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_DROPDOWN;
+  cw.widget = combo;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(combo);
+  QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                   [idx](int) {
+                     std::lock_guard<std::recursive_mutex> lk2(g_widgetMutex);
+                     if (g_shuttingDown)
+                       return;
+                     if (validHandle(idx) && g_widgets[idx].onChange)
+                       g_widgets[idx].onChange();
+                   });
+  return idx;
+}
+
+extern "C" void rt_dropdown_add_item(long long h, const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(text);
+  auto apply = [w, t]() {
+    if (auto *combo = qobject_cast<QComboBox *>(w))
+      combo->addItem(t);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_dropdown_clear(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w]() {
+    if (auto *combo = qobject_cast<QComboBox *>(w))
+      combo->clear();
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" long long rt_dropdown_get_index(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return -1;
+  QWidget *w = g_widgets[h].widget;
+  if (QThread::currentThread() != g_app->thread()) {
+    long long result = -1;
+    QMetaObject::invokeMethod(
+        w,
+        [w, &result]() {
+          if (auto *combo = qobject_cast<QComboBox *>(w))
+            result = combo->currentIndex();
+        },
+        Qt::BlockingQueuedConnection);
+    return result;
+  }
+  if (auto *combo = qobject_cast<QComboBox *>(w))
+    return combo->currentIndex();
+  return -1;
+}
+
+extern "C" void rt_dropdown_set_index(long long h, long long idx) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  int i = (int)idx;
+  auto apply = [w, i]() {
+    if (auto *combo = qobject_cast<QComboBox *>(w))
+      combo->setCurrentIndex(i);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" const char *rt_dropdown_get_text(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return "";
+  QWidget *w = g_widgets[h].widget;
+  std::string result;
+  if (QThread::currentThread() != g_app->thread()) {
+    QMetaObject::invokeMethod(
+        w,
+        [w, &result]() {
+          if (auto *combo = qobject_cast<QComboBox *>(w))
+            result = combo->currentText().toUtf8().constData();
+        },
+        Qt::BlockingQueuedConnection);
+  } else {
+    if (auto *combo = qobject_cast<QComboBox *>(w))
+      result = combo->currentText().toUtf8().constData();
+  }
+  return poolStr(std::move(result));
+}
+
+extern "C" long long rt_create_radio(const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *radio = new QRadioButton(QString::fromUtf8(text));
+  radio->setCursor(Qt::PointingHandCursor);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_RADIO;
+  cw.widget = radio;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(radio);
+  QObject::connect(radio, &QRadioButton::toggled, [idx](bool) {
+    std::lock_guard<std::recursive_mutex> lk2(g_widgetMutex);
+    if (g_shuttingDown)
+      return;
+    if (validHandle(idx) && g_widgets[idx].onChange)
+      g_widgets[idx].onChange();
+  });
+  return idx;
+}
+
+extern "C" long long rt_create_textarea(const char *hint) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *edit = new QTextEdit();
+  if (hint && hint[0])
+    edit->setPlaceholderText(QString::fromUtf8(hint));
+  edit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_TEXTAREA;
+  cw.widget = edit;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(edit);
+  QObject::connect(edit, &QTextEdit::textChanged, [idx]() {
+    std::lock_guard<std::recursive_mutex> lk2(g_widgetMutex);
+    if (g_shuttingDown)
+      return;
+    if (validHandle(idx) && g_widgets[idx].onChange)
+      g_widgets[idx].onChange();
+  });
+  return idx;
+}
+
+extern "C" void rt_textarea_set_text(long long h, const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(text);
+  auto apply = [w, t]() {
+    if (auto *te = qobject_cast<QTextEdit *>(w))
+      te->setPlainText(t);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" const char *rt_textarea_get_text(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return "";
+  QWidget *w = g_widgets[h].widget;
+  std::string result;
+  if (QThread::currentThread() != g_app->thread()) {
+    QMetaObject::invokeMethod(
+        w,
+        [w, &result]() {
+          if (auto *te = qobject_cast<QTextEdit *>(w))
+            result = te->toPlainText().toUtf8().constData();
+        },
+        Qt::BlockingQueuedConnection);
+  } else {
+    if (auto *te = qobject_cast<QTextEdit *>(w))
+      result = te->toPlainText().toUtf8().constData();
+  }
+  return poolStr(std::move(result));
+}
+
+extern "C" long long rt_create_image(const char *path) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *lbl = new QLabel();
+  QPixmap pix(QString::fromUtf8(path));
+  if (!pix.isNull())
+    lbl->setPixmap(
+        pix.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  lbl->setAlignment(Qt::AlignCenter);
+  lbl->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_IMAGE;
+  cw.widget = lbl;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(lbl);
+  return idx;
+}
+
+extern "C" void rt_image_set_source(long long h, const char *path) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString p = QString::fromUtf8(path);
+  auto apply = [w, p]() {
+    if (auto *lbl = qobject_cast<QLabel *>(w)) {
+      QPixmap pix(p);
+      if (!pix.isNull())
+        lbl->setPixmap(pix.scaled(lbl->width(), lbl->height(),
+                                  Qt::KeepAspectRatio,
+                                  Qt::SmoothTransformation));
+    }
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_image_set_size(long long h, int w2, int h2) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w, w2, h2]() {
+    if (auto *lbl = qobject_cast<QLabel *>(w)) {
+      lbl->setFixedSize(w2, h2);
+      QPixmap pm = lbl->pixmap(Qt::ReturnByValue);
+      if (!pm.isNull())
+        lbl->setPixmap(
+            pm.scaled(w2, h2, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" long long rt_create_tab_view(void) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *tabs = new QTabWidget();
+  tabs->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_TABS;
+  cw.widget = tabs;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(tabs);
+  QObject::connect(tabs, &QTabWidget::currentChanged, [idx](int) {
+    std::lock_guard<std::recursive_mutex> lk2(g_widgetMutex);
+    if (g_shuttingDown)
+      return;
+    if (validHandle(idx) && g_widgets[idx].onChange)
+      g_widgets[idx].onChange();
+  });
+  return idx;
+}
+
+extern "C" void rt_tab_add(long long h, const char *title) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(title);
+  auto apply = [w, t]() {
+    if (auto *tabs = qobject_cast<QTabWidget *>(w)) {
+      auto *page = new QWidget();
+      auto *layout = new QVBoxLayout(page);
+      layout->setContentsMargins(8, 8, 8, 8);
+      layout->setSpacing(10);
+      tabs->addTab(page, t);
+    }
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_tab_set_current(long long h, long long idx) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  int i = (int)idx;
+  auto apply = [w, i]() {
+    if (auto *tabs = qobject_cast<QTabWidget *>(w))
+      tabs->setCurrentIndex(i);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" long long rt_tab_get_current(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return -1;
+  QWidget *w = g_widgets[h].widget;
+  if (QThread::currentThread() != g_app->thread()) {
+    long long result = -1;
+    QMetaObject::invokeMethod(
+        w,
+        [w, &result]() {
+          if (auto *tabs = qobject_cast<QTabWidget *>(w))
+            result = tabs->currentIndex();
+        },
+        Qt::BlockingQueuedConnection);
+    return result;
+  }
+  if (auto *tabs = qobject_cast<QTabWidget *>(w))
+    return tabs->currentIndex();
+  return -1;
+}
+
+extern "C" void rt_tab_begin(long long h, long long tabIndex) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  if (auto *tabs = qobject_cast<QTabWidget *>(w)) {
+    int i = (int)tabIndex;
+    if (i >= 0 && i < tabs->count()) {
+      QWidget *page = tabs->widget(i);
+      QLayout *lay = page->layout();
+      if (lay)
+        g_layoutStack.push(lay);
+    }
+  }
+}
+
+extern "C" void rt_tab_end(void) {
+  if (g_layoutStack.size() > 1)
+    g_layoutStack.pop();
+}
+
+extern "C" long long rt_create_scroll_area(void) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *scroll = new QScrollArea();
+  scroll->setWidgetResizable(true);
+  scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  auto *content = new QWidget();
+  auto *layout = new QVBoxLayout(content);
+  layout->setContentsMargins(4, 4, 4, 4);
+  layout->setSpacing(10);
+  scroll->setWidget(content);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_SCROLL;
+  cw.widget = scroll;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(scroll);
+  return idx;
+}
+
+extern "C" void rt_scroll_begin(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  if (auto *scroll = qobject_cast<QScrollArea *>(w)) {
+    QWidget *content = scroll->widget();
+    if (content && content->layout())
+      g_layoutStack.push(content->layout());
+  }
+}
+
+extern "C" void rt_scroll_end(void) {
+  if (g_layoutStack.size() > 1)
+    g_layoutStack.pop();
+}
+
+extern "C" long long rt_create_group_box(const char *title) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *group = new QGroupBox(QString::fromUtf8(title));
+  auto *layout = new QVBoxLayout(group);
+  layout->setContentsMargins(8, 8, 8, 8);
+  layout->setSpacing(10);
+  group->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_GROUP;
+  cw.widget = group;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(group);
+  return idx;
+}
+
+extern "C" void rt_group_begin(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  if (auto *group = qobject_cast<QGroupBox *>(w)) {
+    if (group->layout())
+      g_layoutStack.push(group->layout());
+  }
+}
+
+extern "C" void rt_group_end(void) {
+  if (g_layoutStack.size() > 1)
+    g_layoutStack.pop();
+}
+
+extern "C" long long rt_create_table(int rows, int cols) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  auto *table = new QTableWidget(rows, cols);
+  table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  table->setAlternatingRowColors(true);
+  long long idx = (long long)g_widgets.size();
+  CSWidget cw;
+  cw.type = CS_TABLE;
+  cw.widget = table;
+  g_widgets.push_back(cw);
+  addWidgetToLayout(table);
+  return idx;
+}
+
+extern "C" void rt_table_set_header(long long h, long long col,
+                                    const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(text);
+  int c = (int)col;
+  auto apply = [w, c, t]() {
+    if (auto *table = qobject_cast<QTableWidget *>(w)) {
+      auto *item = table->horizontalHeaderItem(c);
+      if (!item) {
+        item = new QTableWidgetItem(t);
+        table->setHorizontalHeaderItem(c, item);
+      } else {
+        item->setText(t);
+      }
+    }
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_table_set_cell(long long h, long long row, long long col,
+                                  const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(text);
+  int r = (int)row, c = (int)col;
+  auto apply = [w, r, c, t]() {
+    if (auto *table = qobject_cast<QTableWidget *>(w)) {
+      if (r >= table->rowCount())
+        table->setRowCount(r + 1);
+      auto *item = table->item(r, c);
+      if (!item) {
+        item = new QTableWidgetItem(t);
+        table->setItem(r, c, item);
+      } else {
+        item->setText(t);
+      }
+    }
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" const char *rt_table_get_cell(long long h, long long row,
+                                         long long col) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return "";
+  QWidget *w = g_widgets[h].widget;
+  int r = (int)row, c = (int)col;
+  std::string result;
+  if (QThread::currentThread() != g_app->thread()) {
+    QMetaObject::invokeMethod(
+        w,
+        [w, r, c, &result]() {
+          if (auto *table = qobject_cast<QTableWidget *>(w)) {
+            auto *item = table->item(r, c);
+            if (item)
+              result = item->text().toUtf8().constData();
+          }
+        },
+        Qt::BlockingQueuedConnection);
+  } else {
+    if (auto *table = qobject_cast<QTableWidget *>(w)) {
+      auto *item = table->item(r, c);
+      if (item)
+        result = item->text().toUtf8().constData();
+    }
+  }
+  return poolStr(std::move(result));
+}
+
+extern "C" void rt_table_set_rows(long long h, long long rows) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  int r = (int)rows;
+  auto apply = [w, r]() {
+    if (auto *table = qobject_cast<QTableWidget *>(w))
+      table->setRowCount(r);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_table_set_cols(long long h, long long cols) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  int c = (int)cols;
+  auto apply = [w, c]() {
+    if (auto *table = qobject_cast<QTableWidget *>(w))
+      table->setColumnCount(c);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" long long rt_set_timer(int ms, void (*fn)(void)) {
+  if (!fn || !g_app)
+    return -1;
+  long long timerId = -1;
+  auto apply = [ms, fn, &timerId]() {
+    auto *timer = new QTimer(g_app);
+    timer->setInterval(ms);
+    QObject::connect(timer, &QTimer::timeout, [fn]() {
+      if (!g_shuttingDown && fn)
+        fn();
+    });
+    timer->start();
+    timerId = (long long)(intptr_t)timer;
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(g_app, apply, Qt::BlockingQueuedConnection);
+  else
+    apply();
+  return timerId;
+}
+
+extern "C" void rt_clear_timer(long long id) {
+  if (id <= 0)
+    return;
+  auto *timer = (QTimer *)(intptr_t)id;
+  auto apply = [timer]() {
+    timer->stop();
+    timer->deleteLater();
+  };
+  if (g_app && QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(g_app, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" long long rt_set_interval(int ms, void (*fn)(void)) {
+  return rt_set_timer(ms, fn);
+}
+
+extern "C" void rt_clear_interval(long long id) { rt_clear_timer(id); }
+
+extern "C" long long rt_set_timeout(int ms, void (*fn)(void)) {
+  if (!fn || !g_app)
+    return -1;
+  long long timerId = -1;
+  auto apply = [ms, fn, &timerId]() {
+    auto *timer = new QTimer(g_app);
+    timer->setSingleShot(true);
+    timer->setInterval(ms);
+    QObject::connect(timer, &QTimer::timeout, [fn, timer]() {
+      if (!g_shuttingDown && fn)
+        fn();
+      timer->deleteLater();
+    });
+    timer->start();
+    timerId = (long long)(intptr_t)timer;
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(g_app, apply, Qt::BlockingQueuedConnection);
+  else
+    apply();
+  return timerId;
+}
+
+extern "C" void rt_clear_timeout(long long id) { rt_clear_timer(id); }
+
+extern "C" void rt_widget_set_min_size(long long h, int w2, int h2) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w, w2, h2]() { w->setMinimumSize(w2, h2); };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_set_max_size(long long h, int w2, int h2) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w, w2, h2]() { w->setMaximumSize(w2, h2); };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_set_fixed_size(long long h, int w2, int h2) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w, w2, h2]() { w->setFixedSize(w2, h2); };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_set_tooltip(long long h, const char *text) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString t = QString::fromUtf8(text);
+  auto apply = [w, t]() { w->setToolTip(t); };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_set_style(long long h, const char *css) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  QString s = QString::fromUtf8(css);
+  auto apply = [w, s]() { w->setStyleSheet(s); };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_set_padding(long long h, int top, int right,
+                                      int bottom, int left) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w, top, right, bottom, left]() {
+    w->setContentsMargins(left, top, right, bottom);
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+}
+
+extern "C" void rt_widget_remove(long long h) {
+  std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
+  if (!validHandle(h))
+    return;
+  QWidget *w = g_widgets[h].widget;
+  auto apply = [w]() {
+    if (w->parentWidget()) {
+      QLayout *lay = w->parentWidget()->layout();
+      if (lay)
+        lay->removeWidget(w);
+    }
+    w->hide();
+    w->deleteLater();
+  };
+  if (QThread::currentThread() != g_app->thread())
+    QMetaObject::invokeMethod(w, apply, Qt::QueuedConnection);
+  else
+    apply();
+  g_widgets[h].widget = nullptr;
+}
+
+extern "C" long long rt_str_len(const char *s) {
+  if (!s)
+    return 0;
+  return (long long)strlen(s);
+}
+
+extern "C" const char *rt_str_sub(const char *s, long long start,
+                                  long long len) {
+  if (!s)
+    return poolStr("");
+  long long slen = (long long)strlen(s);
+  if (start < 0)
+    start = 0;
+  if (start >= slen)
+    return poolStr("");
+  if (len < 0 || start + len > slen)
+    len = slen - start;
+  return poolStr(std::string(s + start, len));
+}
+
+extern "C" long long rt_str_find(const char *s, const char *sub) {
+  if (!s || !sub)
+    return -1;
+  const char *found = strstr(s, sub);
+  if (!found)
+    return -1;
+  return (long long)(found - s);
+}
+
+extern "C" const char *rt_str_replace(const char *s, const char *from,
+                                      const char *to) {
+  if (!s || !from || !to)
+    return poolStr(s ? s : "");
+  std::string result(s);
+  std::string f(from);
+  std::string t(to);
+  if (f.empty())
+    return poolStr(result);
+  size_t pos = 0;
+  while ((pos = result.find(f, pos)) != std::string::npos) {
+    result.replace(pos, f.length(), t);
+    pos += t.length();
+  }
+  return poolStr(std::move(result));
+}
+
+extern "C" const char *rt_str_trim(const char *s) {
+  if (!s)
+    return poolStr("");
+  std::string str(s);
+  size_t start = str.find_first_not_of(" \t\r\n");
+  if (start == std::string::npos)
+    return poolStr("");
+  size_t end = str.find_last_not_of(" \t\r\n");
+  return poolStr(str.substr(start, end - start + 1));
+}
+
+extern "C" const char *rt_str_upper(const char *s) {
+  if (!s)
+    return poolStr("");
+  std::string str(s);
+  for (auto &c : str)
+    c = toupper((unsigned char)c);
+  return poolStr(std::move(str));
+}
+
+extern "C" const char *rt_str_lower(const char *s) {
+  if (!s)
+    return poolStr("");
+  std::string str(s);
+  for (auto &c : str)
+    c = tolower((unsigned char)c);
+  return poolStr(std::move(str));
+}
+
+extern "C" long long rt_str_starts_with(const char *s, const char *prefix) {
+  if (!s || !prefix)
+    return 0;
+  return strncmp(s, prefix, strlen(prefix)) == 0 ? 1 : 0;
+}
+
+extern "C" long long rt_str_ends_with(const char *s, const char *suffix) {
+  if (!s || !suffix)
+    return 0;
+  size_t slen = strlen(s);
+  size_t suflen = strlen(suffix);
+  if (suflen > slen)
+    return 0;
+  return strcmp(s + slen - suflen, suffix) == 0 ? 1 : 0;
+}
+
+extern "C" long long rt_str_contains(const char *s, const char *sub) {
+  if (!s || !sub)
+    return 0;
+  return strstr(s, sub) != nullptr ? 1 : 0;
+}
+
+extern "C" const char *rt_str_char_at(const char *s, long long idx) {
+  if (!s || idx < 0 || idx >= (long long)strlen(s))
+    return poolStr("");
+  char buf[2] = {s[idx], 0};
+  return poolStr(std::string(buf));
+}
+
+extern "C" double rt_math_sqrt(double v) { return sqrt(v); }
+extern "C" double rt_math_sin(double v) { return sin(v); }
+extern "C" double rt_math_cos(double v) { return cos(v); }
+extern "C" double rt_math_tan(double v) { return tan(v); }
+extern "C" double rt_math_abs(double v) { return fabs(v); }
+extern "C" double rt_math_floor(double v) { return floor(v); }
+extern "C" double rt_math_ceil(double v) { return ceil(v); }
+extern "C" double rt_math_round(double v) { return round(v); }
+extern "C" double rt_math_pow(double base, double exp) {
+  return pow(base, exp);
+}
+extern "C" double rt_math_log(double v) { return log(v); }
+extern "C" double rt_math_min(double a, double b) { return a < b ? a : b; }
+extern "C" double rt_math_max(double a, double b) { return a > b ? a : b; }
+extern "C" long long rt_math_random(long long min, long long max) {
+  if (min > max)
+    std::swap(min, max);
+  return min + (rand() % (max - min + 1));
+}
+extern "C" double rt_math_pi(void) { return 3.14159265358979323846; }
+extern "C" long long rt_to_int(double v) { return (long long)v; }
+extern "C" double rt_to_float(long long v) { return (double)v; }
+
 static void clearWindowDefs() {
   std::lock_guard<std::mutex> lk(g_windowDefsMutex);
   g_windowDefs.clear();
@@ -4350,38 +6796,24 @@ public:
     pushScope();
 
     std::vector<ASTNode *> screenNodes;
+    std::vector<ASTNode *> funcNodes;
     std::vector<ASTNode *> otherNodes;
     for (auto &s : win.body) {
-      if (s->kind == AK::RegisterWindow || s->kind == AK::FuncDecl)
+      if (s->kind == AK::RegisterWindow)
         screenNodes.push_back(s.get());
+      else if (s->kind == AK::FuncDecl)
+        funcNodes.push_back(s.get());
       else
         otherNodes.push_back(s.get());
     }
 
-    for (auto *s : screenNodes)
+    for (auto *s : funcNodes)
       if (!emitNode(*s))
         return false;
 
-    auto *buildFt = llvm::FunctionType::get(Void(), false);
-    auto *buildFn = llvm::Function::Create(
-        buildFt, llvm::Function::ExternalLinkage, "__cb_main_build", M.get());
-    {
-      auto *savedBlock = B.GetInsertBlock();
-      auto savedPoint = B.GetInsertPoint();
-      auto *savedFn = currentFn;
-      currentFn = buildFn;
-      auto *buildEntry = llvm::BasicBlock::Create(*ctx_, "e", buildFn);
-      B.SetInsertPoint(buildEntry);
-      for (auto *s : otherNodes)
-        emitNode(*s);
-      B.CreateRetVoid();
-      currentFn = savedFn;
-      B.SetInsertPoint(savedBlock, savedPoint);
-    }
-
-    std::vector<llvm::Value *> args = {str(win.title), buildFn, i32(win.width),
-                                       i32(win.height)};
-    B.CreateCall(fRegisterWindow, args);
+    for (auto *s : screenNodes)
+      if (!emitNode(*s))
+        return false;
 
     B.CreateCall(fWindowCreate,
                  {str(win.title), i32(win.width), i32(win.height)});
@@ -4409,8 +6841,6 @@ private:
   llvm::Function *currentFn = nullptr;
   int cc, sc, gc;
 
-  // Variable storage: maps variable name -> global variable
-  // We use globals so that callbacks (separate LLVM functions) can access them.
   struct VarInfo {
     llvm::GlobalVariable *gv;
     llvm::Type *type;
@@ -4420,14 +6850,11 @@ private:
   };
   std::vector<VarScope> varScopes;
 
-  // Function registry: maps function name -> {LLVM function, param names, param
-  // globals}
   struct FuncInfo {
     llvm::Function *fn;
     std::vector<std::string> paramNames;
-    // Each param gets a global variable so callbacks can access them
     std::vector<llvm::GlobalVariable *> paramGlobals;
-    llvm::GlobalVariable *returnGlobal; // global to hold return value
+    llvm::GlobalVariable *returnGlobal;
     llvm::Type *returnType;
   };
   std::unordered_map<std::string, FuncInfo> funcRegistry;
@@ -4458,7 +6885,6 @@ private:
     }
     return varScopes.back().vars[name];
   }
-
   // All runtime function callees
   llvm::FunctionCallee fWindowCreate, fWindowEnd, fBeginCol, fBeginRow,
       fEndLayout;
@@ -4485,6 +6911,32 @@ private:
   llvm::FunctionCallee fArrayRemove, fArrayInsert;
   llvm::FunctionCallee fRegisterWindow, fNavigate, fStartWindow;
   llvm::FunctionCallee fParseInt, fParseFloat;
+  llvm::FunctionCallee fCreateDropdown, fDropdownAddItem, fDropdownClear;
+  llvm::FunctionCallee fDropdownGetIndex, fDropdownSetIndex, fDropdownGetText;
+  llvm::FunctionCallee fCreateRadio;
+  llvm::FunctionCallee fCreateTextarea, fTextareaSetText, fTextareaGetText;
+  llvm::FunctionCallee fCreateImage, fImageSetSource, fImageSetSize;
+  llvm::FunctionCallee fCreateTabView, fTabAdd, fTabSetCurrent, fTabGetCurrent;
+  llvm::FunctionCallee fTabBegin, fTabEnd;
+  llvm::FunctionCallee fCreateScrollArea, fScrollBegin, fScrollEnd;
+  llvm::FunctionCallee fCreateGroupBox, fGroupBegin, fGroupEnd;
+  llvm::FunctionCallee fCreateTable, fTableSetHeader, fTableSetCell;
+  llvm::FunctionCallee fTableGetCell, fTableSetRows, fTableSetCols;
+  llvm::FunctionCallee fSetTimerFn, fClearTimerFn, fSetIntervalFn;
+  llvm::FunctionCallee fClearIntervalFn, fSetTimeoutFn, fClearTimeoutFn;
+  llvm::FunctionCallee fWidgetSetMinSize, fWidgetSetMaxSize,
+      fWidgetSetFixedSize;
+  llvm::FunctionCallee fWidgetSetTooltip, fWidgetSetStyleFn;
+  llvm::FunctionCallee fWidgetSetPadding, fWidgetRemove;
+  llvm::FunctionCallee fStrLenFn, fStrSubFn, fStrFindFn, fStrReplaceFn;
+  llvm::FunctionCallee fStrTrimFn, fStrUpperFn, fStrLowerFn;
+  llvm::FunctionCallee fStrStartsWithFn, fStrEndsWithFn, fStrContainsFn;
+  llvm::FunctionCallee fStrCharAtFn;
+  llvm::FunctionCallee fMathSqrt, fMathSin, fMathCos, fMathTan;
+  llvm::FunctionCallee fMathAbs, fMathFloor, fMathCeil, fMathRound;
+  llvm::FunctionCallee fMathPow, fMathLog, fMathMinFn, fMathMaxFn;
+  llvm::FunctionCallee fMathRandom, fMathPiFn;
+  llvm::FunctionCallee fToIntFn, fToFloatFn;
 
   llvm::Type *Void() { return llvm::Type::getVoidTy(*ctx_); }
   llvm::Type *Ptr() { return llvm::PointerType::getUnqual(*ctx_); }
@@ -4659,6 +7111,177 @@ private:
         "rt_parse_int", llvm::FunctionType::get(I64(), {Ptr()}, false));
     fParseFloat = M->getOrInsertFunction(
         "rt_parse_float", llvm::FunctionType::get(F64(), {Ptr()}, false));
+    fCreateDropdown = M->getOrInsertFunction(
+        "rt_create_dropdown", llvm::FunctionType::get(I64(), false));
+    fDropdownAddItem = M->getOrInsertFunction(
+        "rt_dropdown_add_item",
+        llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fDropdownClear = M->getOrInsertFunction(
+        "rt_dropdown_clear", llvm::FunctionType::get(Void(), {I64()}, false));
+    fDropdownGetIndex =
+        M->getOrInsertFunction("rt_dropdown_get_index",
+                               llvm::FunctionType::get(I64(), {I64()}, false));
+    fDropdownSetIndex = M->getOrInsertFunction(
+        "rt_dropdown_set_index",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fDropdownGetText = M->getOrInsertFunction(
+        "rt_dropdown_get_text", llvm::FunctionType::get(Ptr(), {I64()}, false));
+    fCreateRadio = M->getOrInsertFunction(
+        "rt_create_radio", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fCreateTextarea = M->getOrInsertFunction(
+        "rt_create_textarea", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fTextareaSetText = M->getOrInsertFunction(
+        "rt_textarea_set_text",
+        llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fTextareaGetText = M->getOrInsertFunction(
+        "rt_textarea_get_text", llvm::FunctionType::get(Ptr(), {I64()}, false));
+    fCreateImage = M->getOrInsertFunction(
+        "rt_create_image", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fImageSetSource = M->getOrInsertFunction(
+        "rt_image_set_source",
+        llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fImageSetSize = M->getOrInsertFunction(
+        "rt_image_set_size",
+        llvm::FunctionType::get(Void(), {I64(), I32(), I32()}, false));
+    fCreateTabView = M->getOrInsertFunction(
+        "rt_create_tab_view", llvm::FunctionType::get(I64(), false));
+    fTabAdd = M->getOrInsertFunction(
+        "rt_tab_add", llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fTabSetCurrent = M->getOrInsertFunction(
+        "rt_tab_set_current",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fTabGetCurrent = M->getOrInsertFunction(
+        "rt_tab_get_current", llvm::FunctionType::get(I64(), {I64()}, false));
+    fTabBegin = M->getOrInsertFunction(
+        "rt_tab_begin", llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fTabEnd = M->getOrInsertFunction("rt_tab_end",
+                                     llvm::FunctionType::get(Void(), false));
+    fCreateScrollArea = M->getOrInsertFunction(
+        "rt_create_scroll_area", llvm::FunctionType::get(I64(), false));
+    fScrollBegin = M->getOrInsertFunction(
+        "rt_scroll_begin", llvm::FunctionType::get(Void(), {I64()}, false));
+    fScrollEnd = M->getOrInsertFunction("rt_scroll_end",
+                                        llvm::FunctionType::get(Void(), false));
+    fCreateGroupBox = M->getOrInsertFunction(
+        "rt_create_group_box", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fGroupBegin = M->getOrInsertFunction(
+        "rt_group_begin", llvm::FunctionType::get(Void(), {I64()}, false));
+    fGroupEnd = M->getOrInsertFunction("rt_group_end",
+                                       llvm::FunctionType::get(Void(), false));
+    fCreateTable = M->getOrInsertFunction(
+        "rt_create_table",
+        llvm::FunctionType::get(I64(), {I32(), I32()}, false));
+    fTableSetHeader = M->getOrInsertFunction(
+        "rt_table_set_header",
+        llvm::FunctionType::get(Void(), {I64(), I64(), Ptr()}, false));
+    fTableSetCell = M->getOrInsertFunction(
+        "rt_table_set_cell",
+        llvm::FunctionType::get(Void(), {I64(), I64(), I64(), Ptr()}, false));
+    fTableGetCell = M->getOrInsertFunction(
+        "rt_table_get_cell",
+        llvm::FunctionType::get(Ptr(), {I64(), I64(), I64()}, false));
+    fTableSetRows = M->getOrInsertFunction(
+        "rt_table_set_rows",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fTableSetCols = M->getOrInsertFunction(
+        "rt_table_set_cols",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fSetTimerFn = M->getOrInsertFunction(
+        "rt_set_timer", llvm::FunctionType::get(I64(), {I32(), Ptr()}, false));
+    fClearTimerFn = M->getOrInsertFunction(
+        "rt_clear_timer", llvm::FunctionType::get(Void(), {I64()}, false));
+    fSetIntervalFn = M->getOrInsertFunction(
+        "rt_set_interval",
+        llvm::FunctionType::get(I64(), {I32(), Ptr()}, false));
+    fClearIntervalFn = M->getOrInsertFunction(
+        "rt_clear_interval", llvm::FunctionType::get(Void(), {I64()}, false));
+    fSetTimeoutFn = M->getOrInsertFunction(
+        "rt_set_timeout",
+        llvm::FunctionType::get(I64(), {I32(), Ptr()}, false));
+    fClearTimeoutFn = M->getOrInsertFunction(
+        "rt_clear_timeout", llvm::FunctionType::get(Void(), {I64()}, false));
+    fWidgetSetMinSize = M->getOrInsertFunction(
+        "rt_widget_set_min_size",
+        llvm::FunctionType::get(Void(), {I64(), I32(), I32()}, false));
+    fWidgetSetMaxSize = M->getOrInsertFunction(
+        "rt_widget_set_max_size",
+        llvm::FunctionType::get(Void(), {I64(), I32(), I32()}, false));
+    fWidgetSetFixedSize = M->getOrInsertFunction(
+        "rt_widget_set_fixed_size",
+        llvm::FunctionType::get(Void(), {I64(), I32(), I32()}, false));
+    fWidgetSetTooltip = M->getOrInsertFunction(
+        "rt_widget_set_tooltip",
+        llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fWidgetSetStyleFn = M->getOrInsertFunction(
+        "rt_widget_set_style",
+        llvm::FunctionType::get(Void(), {I64(), Ptr()}, false));
+    fWidgetSetPadding = M->getOrInsertFunction(
+        "rt_widget_set_padding",
+        llvm::FunctionType::get(Void(), {I64(), I32(), I32(), I32(), I32()},
+                                false));
+    fWidgetRemove = M->getOrInsertFunction(
+        "rt_widget_remove", llvm::FunctionType::get(Void(), {I64()}, false));
+    fStrLenFn = M->getOrInsertFunction(
+        "rt_str_len", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fStrSubFn = M->getOrInsertFunction(
+        "rt_str_sub",
+        llvm::FunctionType::get(Ptr(), {Ptr(), I64(), I64()}, false));
+    fStrFindFn = M->getOrInsertFunction(
+        "rt_str_find", llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
+    fStrReplaceFn = M->getOrInsertFunction(
+        "rt_str_replace",
+        llvm::FunctionType::get(Ptr(), {Ptr(), Ptr(), Ptr()}, false));
+    fStrTrimFn = M->getOrInsertFunction(
+        "rt_str_trim", llvm::FunctionType::get(Ptr(), {Ptr()}, false));
+    fStrUpperFn = M->getOrInsertFunction(
+        "rt_str_upper", llvm::FunctionType::get(Ptr(), {Ptr()}, false));
+    fStrLowerFn = M->getOrInsertFunction(
+        "rt_str_lower", llvm::FunctionType::get(Ptr(), {Ptr()}, false));
+    fStrStartsWithFn = M->getOrInsertFunction(
+        "rt_str_starts_with",
+        llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
+    fStrEndsWithFn = M->getOrInsertFunction(
+        "rt_str_ends_with",
+        llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
+    fStrContainsFn = M->getOrInsertFunction(
+        "rt_str_contains",
+        llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
+    fStrCharAtFn = M->getOrInsertFunction(
+        "rt_str_char_at",
+        llvm::FunctionType::get(Ptr(), {Ptr(), I64()}, false));
+    fMathSqrt = M->getOrInsertFunction(
+        "rt_math_sqrt", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathSin = M->getOrInsertFunction(
+        "rt_math_sin", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathCos = M->getOrInsertFunction(
+        "rt_math_cos", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathTan = M->getOrInsertFunction(
+        "rt_math_tan", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathAbs = M->getOrInsertFunction(
+        "rt_math_abs", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathFloor = M->getOrInsertFunction(
+        "rt_math_floor", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathCeil = M->getOrInsertFunction(
+        "rt_math_ceil", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathRound = M->getOrInsertFunction(
+        "rt_math_round", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathPow = M->getOrInsertFunction(
+        "rt_math_pow", llvm::FunctionType::get(F64(), {F64(), F64()}, false));
+    fMathLog = M->getOrInsertFunction(
+        "rt_math_log", llvm::FunctionType::get(F64(), {F64()}, false));
+    fMathMinFn = M->getOrInsertFunction(
+        "rt_math_min", llvm::FunctionType::get(F64(), {F64(), F64()}, false));
+    fMathMaxFn = M->getOrInsertFunction(
+        "rt_math_max", llvm::FunctionType::get(F64(), {F64(), F64()}, false));
+    fMathRandom = M->getOrInsertFunction(
+        "rt_math_random",
+        llvm::FunctionType::get(I64(), {I64(), I64()}, false));
+    fMathPiFn = M->getOrInsertFunction("rt_math_pi",
+                                       llvm::FunctionType::get(F64(), false));
+    fToIntFn = M->getOrInsertFunction(
+        "rt_to_int", llvm::FunctionType::get(I64(), {F64()}, false));
+    fToFloatFn = M->getOrInsertFunction(
+        "rt_to_float", llvm::FunctionType::get(F64(), {I64()}, false));
   }
 
   llvm::Value *str(const std::string &s) {
@@ -5076,6 +7699,242 @@ private:
       phi->addIncoming(elseVal, elseBB);
       return phi;
     }
+
+    case AK::DropdownGetIndex: {
+      auto &d = static_cast<const DropdownGetIndexExpr &>(n);
+      auto *h = emitExpr(*d.handle);
+      return B.CreateCall(fDropdownGetIndex, {valToI64(h)});
+    }
+    case AK::DropdownGetText: {
+      auto &d = static_cast<const DropdownGetTextExpr &>(n);
+      auto *h = emitExpr(*d.handle);
+      return B.CreateCall(fDropdownGetText, {valToI64(h)});
+    }
+    case AK::TextareaGetText: {
+      auto &t = static_cast<const TextareaGetTextExpr &>(n);
+      auto *h = emitExpr(*t.handle);
+      return B.CreateCall(fTextareaGetText, {valToI64(h)});
+    }
+    case AK::TabGetCurrent: {
+      auto &t = static_cast<const TabGetCurrentExpr &>(n);
+      auto *h = emitExpr(*t.handle);
+      return B.CreateCall(fTabGetCurrent, {valToI64(h)});
+    }
+    case AK::TableGetCell: {
+      auto &t = static_cast<const TableGetCellExpr &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *r = emitExpr(*t.row);
+      auto *c = emitExpr(*t.col);
+      return B.CreateCall(fTableGetCell,
+                          {valToI64(h), valToI64(r), valToI64(c)});
+    }
+    case AK::SetInterval: {
+      auto &si2 = static_cast<const SetIntervalExpr &>(n);
+      auto *ms = emitExpr(*si2.ms);
+      auto *cb = makeCb(*si2.callback);
+      return B.CreateCall(fSetIntervalFn, {valToI32(ms), cb});
+    }
+    case AK::SetTimeout: {
+      auto &st = static_cast<const SetTimeoutExpr &>(n);
+      auto *ms = emitExpr(*st.ms);
+      auto *cb = makeCb(*st.callback);
+      return B.CreateCall(fSetTimeoutFn, {valToI32(ms), cb});
+    }
+    case AK::StrLen: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fStrLenFn, {valToStr(a)});
+    }
+    case AK::StrTrim: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fStrTrimFn, {valToStr(a)});
+    }
+    case AK::StrUpper: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fStrUpperFn, {valToStr(a)});
+    }
+    case AK::StrLower: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fStrLowerFn, {valToStr(a)});
+    }
+    case AK::StrSub: {
+      auto &b3 = static_cast<const BuiltinThreeArgExpr &>(n);
+      auto *a = emitExpr(*b3.arg1);
+      auto *b = emitExpr(*b3.arg2);
+      auto *c = emitExpr(*b3.arg3);
+      return B.CreateCall(fStrSubFn, {valToStr(a), valToI64(b), valToI64(c)});
+    }
+    case AK::StrFind: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fStrFindFn, {valToStr(a), valToStr(b)});
+    }
+    case AK::StrReplace: {
+      auto &b3 = static_cast<const BuiltinThreeArgExpr &>(n);
+      auto *a = emitExpr(*b3.arg1);
+      auto *b = emitExpr(*b3.arg2);
+      auto *c = emitExpr(*b3.arg3);
+      return B.CreateCall(fStrReplaceFn,
+                          {valToStr(a), valToStr(b), valToStr(c)});
+    }
+    case AK::StrStartsWith: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fStrStartsWithFn, {valToStr(a), valToStr(b)});
+    }
+    case AK::StrEndsWith: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fStrEndsWithFn, {valToStr(a), valToStr(b)});
+    }
+    case AK::StrContains: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fStrContainsFn, {valToStr(a), valToStr(b)});
+    }
+    case AK::StrCharAt: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fStrCharAtFn, {valToStr(a), valToI64(b)});
+    }
+    case AK::MathSqrt: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathSqrt, {a});
+    }
+    case AK::MathSin: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathSin, {a});
+    }
+    case AK::MathCos: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathCos, {a});
+    }
+    case AK::MathTan: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathTan, {a});
+    }
+    case AK::MathAbs: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathAbs, {a});
+    }
+    case AK::MathFloor: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathFloor, {a});
+    }
+    case AK::MathCeil: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathCeil, {a});
+    }
+    case AK::MathRound: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathRound, {a});
+    }
+    case AK::MathLog: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      return B.CreateCall(fMathLog, {a});
+    }
+    case AK::MathPow: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      if (!b->getType()->isDoubleTy())
+        b = B.CreateSIToFP(b, F64());
+      return B.CreateCall(fMathPow, {a, b});
+    }
+    case AK::MathMin: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      if (!b->getType()->isDoubleTy())
+        b = B.CreateSIToFP(b, F64());
+      return B.CreateCall(fMathMinFn, {a, b});
+    }
+    case AK::MathMax: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      if (!a->getType()->isDoubleTy())
+        a = B.CreateSIToFP(a, F64());
+      if (!b->getType()->isDoubleTy())
+        b = B.CreateSIToFP(b, F64());
+      return B.CreateCall(fMathMaxFn, {a, b});
+    }
+    case AK::MathRandom: {
+      auto &b2 = static_cast<const BuiltinTwoArgExpr &>(n);
+      auto *a = emitExpr(*b2.arg1);
+      auto *b = emitExpr(*b2.arg2);
+      return B.CreateCall(fMathRandom, {valToI64(a), valToI64(b)});
+    }
+    case AK::MathPi: {
+      return B.CreateCall(fMathPiFn);
+    }
+    case AK::ToInt: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (a->getType()->isDoubleTy())
+        return B.CreateCall(fToIntFn, {a});
+      return valToI64(a);
+    }
+    case AK::ToFloat: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      if (a->getType()->isIntegerTy(64))
+        return B.CreateCall(fToFloatFn, {a});
+      if (a->getType()->isIntegerTy(32))
+        return B.CreateCall(fToFloatFn, {B.CreateSExt(a, I64())});
+      if (a->getType()->isDoubleTy())
+        return a;
+      return llvm::ConstantFP::get(F64(), 0.0);
+    }
+    case AK::ParseInt: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fParseInt, {valToStr(a)});
+    }
+    case AK::ParseFloat: {
+      auto &b1 = static_cast<const BuiltinOneArgExpr &>(n);
+      auto *a = emitExpr(*b1.arg);
+      return B.CreateCall(fParseFloat, {valToStr(a)});
+    }
     default:
       return i64(0);
     }
@@ -5276,10 +8135,8 @@ private:
         initVal = emitExpr(*vd.init);
         varType = initVal->getType();
       }
-      // Create a global variable with appropriate zero initializer
       llvm::Constant *zeroInit = llvm::Constant::getNullValue(varType);
       auto &vi = declareVar(vd.name, varType, zeroInit);
-      // Store initial value if present
       if (initVal)
         B.CreateStore(initVal, vi.gv);
       return true;
@@ -5288,14 +8145,12 @@ private:
       auto &va = static_cast<const VarAssignStmt &>(n);
       VarInfo *vi = lookupVar(va.name);
       if (!vi) {
-        // Auto-declare as global
         auto *val = emitExpr(*va.value);
         llvm::Constant *zeroInit = llvm::Constant::getNullValue(val->getType());
         auto &newVi = declareVar(va.name, val->getType(), zeroInit);
         B.CreateStore(val, newVi.gv);
       } else {
         auto *val = emitExpr(*va.value);
-        // Type coercion if needed
         if (val->getType() != vi->type) {
           if (vi->type->isIntegerTy(64))
             val = valToI64(val);
@@ -5310,7 +8165,6 @@ private:
       }
       return true;
     }
-
     case AK::For: {
       auto &fs = static_cast<const ForStmt &>(n);
       llvm::Function *fn = B.GetInsertBlock()->getParent();
@@ -5336,7 +8190,6 @@ private:
       B.SetInsertPoint(exitBB);
       return true;
     }
-
     case AK::While: {
       auto &ws = static_cast<const WhileStmt &>(n);
       llvm::Function *fn = B.GetInsertBlock()->getParent();
@@ -5355,17 +8208,14 @@ private:
       B.SetInsertPoint(exitBB);
       return true;
     }
-
     case AK::If: {
       auto &ifn = static_cast<const IfStmt &>(n);
       llvm::Function *fn = B.GetInsertBlock()->getParent();
       llvm::BasicBlock *mergeBB =
           llvm::BasicBlock::Create(*ctx_, "ifmerge", fn);
-
       for (size_t i = 0; i < ifn.branches.size(); i++) {
         auto &branch = ifn.branches[i];
         if (!branch.condition) {
-          // else branch
           for (auto &s : branch.body)
             emitNode(*s);
           B.CreateBr(mergeBB);
@@ -5380,12 +8230,10 @@ private:
             elseBB = mergeBB;
           }
           B.CreateCondBr(condBool, thenBB, elseBB);
-
           B.SetInsertPoint(thenBB);
           for (auto &s : branch.body)
             emitNode(*s);
           B.CreateBr(mergeBB);
-
           if (elseBB != mergeBB) {
             B.SetInsertPoint(elseBB);
           }
@@ -5468,44 +8316,33 @@ private:
       B.CreateCall(fSetOnDestroy, {makeCb(*sd.callback)});
       return true;
     }
-
     case AK::RegisterWindow: {
       auto &rw = static_cast<const RegisterWindowStmt &>(n);
       auto *buildFn = makeCb(*rw.buildFunc);
-      std::vector<llvm::Value *> args = {str(rw.name), buildFn, i32(rw.width),
-                                         i32(rw.height)};
-      B.CreateCall(fRegisterWindow, args);
+      B.CreateCall(fRegisterWindow,
+                   {str(rw.name), buildFn, i32(rw.width), i32(rw.height)});
       return true;
     }
     case AK::Navigate: {
       auto &nav = static_cast<const NavigateStmt &>(n);
       auto *target = emitExpr(*nav.target);
-      std::vector<llvm::Value *> args = {valToStr(target)};
-      B.CreateCall(fNavigate, args);
+      B.CreateCall(fNavigate, {valToStr(target)});
       return true;
     }
     case AK::StartWindow: {
       auto &sw = static_cast<const StartWindowStmt &>(n);
       auto *target = emitExpr(*sw.target);
-      std::vector<llvm::Value *> args = {valToStr(target)};
-      B.CreateCall(fStartWindow, args);
+      B.CreateCall(fStartWindow, {valToStr(target)});
       return true;
     }
-
     case AK::FuncDecl: {
       auto &fd = static_cast<const FuncDeclStmt &>(n);
-
-      // Create global variables for parameters (so they're accessible from
-      // callbacks)
       FuncInfo fi;
       fi.returnType = I64();
-      // Return value global
       std::string retName = ".fn.ret." + fd.name + "." + std::to_string(gc++);
       fi.returnGlobal = new llvm::GlobalVariable(
           *M, I64(), false, llvm::GlobalValue::InternalLinkage,
           llvm::ConstantInt::get(I64(), 0), retName);
-
-      // Parameter globals
       for (auto &param : fd.params) {
         std::string pgname = ".fn.param." + fd.name + "." + param.name + "." +
                              std::to_string(gc++);
@@ -5515,47 +8352,32 @@ private:
         fi.paramGlobals.push_back(pgv);
         fi.paramNames.push_back(param.name);
       }
-
-      // Create the LLVM function: returns i64, takes i64 params
       std::vector<llvm::Type *> paramTypes(fd.params.size(), I64());
-      auto *ft = llvm::FunctionType::get(I64(), paramTypes, false);
-      auto *fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+      auto *fty = llvm::FunctionType::get(I64(), paramTypes, false);
+      auto *fn = llvm::Function::Create(fty, llvm::Function::ExternalLinkage,
                                         "__userfn_" + fd.name, M.get());
       fi.fn = fn;
       funcRegistry[fd.name] = fi;
-
-      // Save current state
       auto *sb = B.GetInsertBlock();
       auto si = B.GetInsertPoint();
       auto *savedFn = currentFn;
       currentFn = fn;
-
       auto *entry = llvm::BasicBlock::Create(*ctx_, "entry", fn);
       B.SetInsertPoint(entry);
-
-      // Store arguments into param globals and declare in scope
       pushScope();
       unsigned idx = 0;
       for (auto &arg : fn->args()) {
         arg.setName(fd.params[idx].name);
         B.CreateStore(&arg, fi.paramGlobals[idx]);
-        // Register param as a variable in scope
         VarInfo vi{fi.paramGlobals[idx], I64()};
         varScopes.back().vars[fd.params[idx].name] = vi;
         idx++;
       }
-
-      // Emit body
       for (auto &s : fd.body)
         emitNode(*s);
-
-      // If no explicit return, return 0
       if (!B.GetInsertBlock()->getTerminator())
         B.CreateRet(llvm::ConstantInt::get(I64(), 0));
-
       popScope();
-
-      // Restore state
       currentFn = savedFn;
       B.SetInsertPoint(sb, si);
       return true;
@@ -5568,18 +8390,15 @@ private:
       } else {
         B.CreateRet(llvm::ConstantInt::get(I64(), 0));
       }
-      // Create unreachable block for any code after return
       llvm::Function *fn = B.GetInsertBlock()->getParent();
       auto *deadBB = llvm::BasicBlock::Create(*ctx_, "after.ret", fn);
       B.SetInsertPoint(deadBB);
       return true;
     }
     case AK::FuncCall: {
-      // As statement, discard return value
       emitExpr(n);
       return true;
     }
-
     case AK::ArrayPush: {
       auto &ap = static_cast<const ArrayPushStmt &>(n);
       auto *arr = emitExpr(*ap.array);
@@ -5616,16 +8435,253 @@ private:
       B.CreateCall(fArrayInsert, {valToI64(arr), valToI64(idx), valToI64(val)});
       return true;
     }
-
     case AK::PreIncrement:
     case AK::PreDecrement:
     case AK::PostIncrement:
     case AK::PostDecrement: {
-      emitExpr(n); // reuse expression codegen, discard result
+      emitExpr(n);
+      return true;
+    }
+    case AK::Dropdown: {
+      auto &d = static_cast<const DropdownStmt &>(n);
+      auto *h = B.CreateCall(fCreateDropdown);
+      emitWidgetMethods(h, d.methods);
+      return true;
+    }
+    case AK::DropdownAddItem: {
+      auto &d = static_cast<const DropdownAddItemStmt &>(n);
+      auto *h = emitExpr(*d.handle);
+      auto *t = emitExpr(*d.text);
+      B.CreateCall(fDropdownAddItem, {valToI64(h), valToStr(t)});
+      return true;
+    }
+    case AK::DropdownClear: {
+      auto &d = static_cast<const DropdownClearStmt &>(n);
+      auto *h = emitExpr(*d.handle);
+      B.CreateCall(fDropdownClear, {valToI64(h)});
+      return true;
+    }
+    case AK::DropdownSetIndex: {
+      auto &d = static_cast<const DropdownSetIndexStmt &>(n);
+      auto *h = emitExpr(*d.handle);
+      auto *i = emitExpr(*d.index);
+      B.CreateCall(fDropdownSetIndex, {valToI64(h), valToI64(i)});
+      return true;
+    }
+    case AK::Radio: {
+      auto &r = static_cast<const RadioStmt &>(n);
+      auto *textVal = emitExpr(*r.textExpr);
+      auto *h = B.CreateCall(fCreateRadio, {valToStr(textVal)});
+      emitWidgetMethods(h, r.methods);
+      return true;
+    }
+    case AK::Textarea: {
+      auto &t = static_cast<const TextareaStmt &>(n);
+      auto *hintVal = emitExpr(*t.hintExpr);
+      auto *h = B.CreateCall(fCreateTextarea, {valToStr(hintVal)});
+      emitWidgetMethods(h, t.methods);
+      return true;
+    }
+    case AK::TextareaSetText: {
+      auto &t = static_cast<const TextareaSetTextStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *v = emitExpr(*t.text);
+      B.CreateCall(fTextareaSetText, {valToI64(h), valToStr(v)});
+      return true;
+    }
+    case AK::Image: {
+      auto &img = static_cast<const ImageStmt &>(n);
+      auto *pathVal = emitExpr(*img.pathExpr);
+      auto *h = B.CreateCall(fCreateImage, {valToStr(pathVal)});
+      emitWidgetMethods(h, img.methods);
+      return true;
+    }
+    case AK::ImageSetSource: {
+      auto &img = static_cast<const ImageSetSourceStmt &>(n);
+      auto *h = emitExpr(*img.handle);
+      auto *p = emitExpr(*img.path);
+      B.CreateCall(fImageSetSource, {valToI64(h), valToStr(p)});
+      return true;
+    }
+    case AK::ImageSetSize: {
+      auto &img = static_cast<const ImageSetSizeStmt &>(n);
+      auto *h = emitExpr(*img.handle);
+      auto *w = emitExpr(*img.width);
+      auto *ht = emitExpr(*img.height);
+      B.CreateCall(fImageSetSize, {valToI64(h), valToI32(w), valToI32(ht)});
+      return true;
+    }
+    case AK::TabView: {
+      auto &t = static_cast<const TabViewStmt &>(n);
+      auto *h = B.CreateCall(fCreateTabView);
+      emitWidgetMethods(h, t.methods);
+      return true;
+    }
+    case AK::TabAdd: {
+      auto &t = static_cast<const TabAddStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *title = emitExpr(*t.title);
+      B.CreateCall(fTabAdd, {valToI64(h), valToStr(title)});
+      return true;
+    }
+    case AK::TabSetCurrent: {
+      auto &t = static_cast<const TabSetCurrentStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *i = emitExpr(*t.index);
+      B.CreateCall(fTabSetCurrent, {valToI64(h), valToI64(i)});
+      return true;
+    }
+    case AK::TabBegin: {
+      auto &t = static_cast<const TabBeginStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *i = emitExpr(*t.index);
+      B.CreateCall(fTabBegin, {valToI64(h), valToI64(i)});
+      return true;
+    }
+    case AK::TabEnd: {
+      B.CreateCall(fTabEnd);
+      return true;
+    }
+    case AK::ScrollArea: {
+      auto &s = static_cast<const ScrollAreaStmt &>(n);
+      auto *h = B.CreateCall(fCreateScrollArea);
+      emitWidgetMethods(h, s.methods);
+      return true;
+    }
+    case AK::ScrollBegin: {
+      auto &s = static_cast<const ScrollBeginStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      B.CreateCall(fScrollBegin, {valToI64(h)});
+      return true;
+    }
+    case AK::ScrollEnd: {
+      B.CreateCall(fScrollEnd);
+      return true;
+    }
+    case AK::GroupBox: {
+      auto &g = static_cast<const GroupBoxStmt &>(n);
+      auto *titleVal = emitExpr(*g.titleExpr);
+      auto *h = B.CreateCall(fCreateGroupBox, {valToStr(titleVal)});
+      emitWidgetMethods(h, g.methods);
+      return true;
+    }
+    case AK::GroupBegin: {
+      auto &g = static_cast<const GroupBeginStmt &>(n);
+      auto *h = emitExpr(*g.handle);
+      B.CreateCall(fGroupBegin, {valToI64(h)});
+      return true;
+    }
+    case AK::GroupEnd: {
+      B.CreateCall(fGroupEnd);
+      return true;
+    }
+    case AK::Table: {
+      auto &t = static_cast<const TableStmt &>(n);
+      auto *r = emitExpr(*t.rows);
+      auto *c = emitExpr(*t.cols);
+      auto *h = B.CreateCall(fCreateTable, {valToI32(r), valToI32(c)});
+      emitWidgetMethods(h, t.methods);
+      return true;
+    }
+    case AK::TableSetHeader: {
+      auto &t = static_cast<const TableSetHeaderStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *c = emitExpr(*t.col);
+      auto *txt = emitExpr(*t.text);
+      B.CreateCall(fTableSetHeader, {valToI64(h), valToI64(c), valToStr(txt)});
+      return true;
+    }
+    case AK::TableSetCell: {
+      auto &t = static_cast<const TableSetCellStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *r = emitExpr(*t.row);
+      auto *c = emitExpr(*t.col);
+      auto *txt = emitExpr(*t.text);
+      B.CreateCall(fTableSetCell,
+                   {valToI64(h), valToI64(r), valToI64(c), valToStr(txt)});
+      return true;
+    }
+    case AK::TableSetRows: {
+      auto &t = static_cast<const TableSetRowsStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *r = emitExpr(*t.rows);
+      B.CreateCall(fTableSetRows, {valToI64(h), valToI64(r)});
+      return true;
+    }
+    case AK::TableSetCols: {
+      auto &t = static_cast<const TableSetColsStmt &>(n);
+      auto *h = emitExpr(*t.handle);
+      auto *c = emitExpr(*t.cols);
+      B.CreateCall(fTableSetCols, {valToI64(h), valToI64(c)});
+      return true;
+    }
+    case AK::ClearTimer: {
+      auto &ct = static_cast<const ClearTimerStmt &>(n);
+      auto *h = emitExpr(*ct.handle);
+      B.CreateCall(fClearTimerFn, {valToI64(h)});
+      return true;
+    }
+    case AK::SetInterval: {
+      auto &si2 = static_cast<const SetIntervalExpr &>(n);
+      auto *ms = emitExpr(*si2.ms);
+      auto *cb = makeCb(*si2.callback);
+      B.CreateCall(fSetIntervalFn, {valToI32(ms), cb});
+      return true;
+    }
+    case AK::SetTimeout: {
+      auto &st = static_cast<const SetTimeoutExpr &>(n);
+      auto *ms = emitExpr(*st.ms);
+      auto *cb = makeCb(*st.callback);
+      B.CreateCall(fSetTimeoutFn, {valToI32(ms), cb});
+      return true;
+    }
+    case AK::WidgetSetMinSize: {
+      auto &s = static_cast<const WidgetSetMinSizeStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      auto *w = emitExpr(*s.w);
+      auto *ht = emitExpr(*s.h);
+      B.CreateCall(fWidgetSetMinSize, {valToI64(h), valToI32(w), valToI32(ht)});
+      return true;
+    }
+    case AK::WidgetSetMaxSize: {
+      auto &s = static_cast<const WidgetSetMaxSizeStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      auto *w = emitExpr(*s.w);
+      auto *ht = emitExpr(*s.h);
+      B.CreateCall(fWidgetSetMaxSize, {valToI64(h), valToI32(w), valToI32(ht)});
+      return true;
+    }
+    case AK::WidgetSetFixedSize: {
+      auto &s = static_cast<const WidgetSetFixedSizeStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      auto *w = emitExpr(*s.w);
+      auto *ht = emitExpr(*s.h);
+      B.CreateCall(fWidgetSetFixedSize,
+                   {valToI64(h), valToI32(w), valToI32(ht)});
+      return true;
+    }
+    case AK::WidgetSetTooltip: {
+      auto &s = static_cast<const WidgetSetTooltipStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      auto *t = emitExpr(*s.text);
+      B.CreateCall(fWidgetSetTooltip, {valToI64(h), valToStr(t)});
+      return true;
+    }
+    case AK::WidgetSetStyle: {
+      auto &s = static_cast<const WidgetSetStyleStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      auto *c = emitExpr(*s.css);
+      B.CreateCall(fWidgetSetStyleFn, {valToI64(h), valToStr(c)});
+      return true;
+    }
+    case AK::WidgetRemove: {
+      auto &s = static_cast<const WidgetRemoveStmt &>(n);
+      auto *h = emitExpr(*s.handle);
+      B.CreateCall(fWidgetRemove, {valToI64(h)});
       return true;
     }
     default:
-      return false;
+      return true;
     }
   }
 };
@@ -5705,6 +8761,77 @@ static const Sym g_syms[] = {
     {"rt_start_window", (void *)(intptr_t)rt_start_window},
     {"rt_parse_int", (void *)(intptr_t)rt_parse_int},
     {"rt_parse_float", (void *)(intptr_t)rt_parse_float},
+    {"rt_create_dropdown", (void *)(intptr_t)rt_create_dropdown},
+    {"rt_dropdown_add_item", (void *)(intptr_t)rt_dropdown_add_item},
+    {"rt_dropdown_clear", (void *)(intptr_t)rt_dropdown_clear},
+    {"rt_dropdown_get_index", (void *)(intptr_t)rt_dropdown_get_index},
+    {"rt_dropdown_set_index", (void *)(intptr_t)rt_dropdown_set_index},
+    {"rt_dropdown_get_text", (void *)(intptr_t)rt_dropdown_get_text},
+    {"rt_create_radio", (void *)(intptr_t)rt_create_radio},
+    {"rt_create_textarea", (void *)(intptr_t)rt_create_textarea},
+    {"rt_textarea_set_text", (void *)(intptr_t)rt_textarea_set_text},
+    {"rt_textarea_get_text", (void *)(intptr_t)rt_textarea_get_text},
+    {"rt_create_image", (void *)(intptr_t)rt_create_image},
+    {"rt_image_set_source", (void *)(intptr_t)rt_image_set_source},
+    {"rt_image_set_size", (void *)(intptr_t)rt_image_set_size},
+    {"rt_create_tab_view", (void *)(intptr_t)rt_create_tab_view},
+    {"rt_tab_add", (void *)(intptr_t)rt_tab_add},
+    {"rt_tab_set_current", (void *)(intptr_t)rt_tab_set_current},
+    {"rt_tab_get_current", (void *)(intptr_t)rt_tab_get_current},
+    {"rt_tab_begin", (void *)(intptr_t)rt_tab_begin},
+    {"rt_tab_end", (void *)(intptr_t)rt_tab_end},
+    {"rt_create_scroll_area", (void *)(intptr_t)rt_create_scroll_area},
+    {"rt_scroll_begin", (void *)(intptr_t)rt_scroll_begin},
+    {"rt_scroll_end", (void *)(intptr_t)rt_scroll_end},
+    {"rt_create_group_box", (void *)(intptr_t)rt_create_group_box},
+    {"rt_group_begin", (void *)(intptr_t)rt_group_begin},
+    {"rt_group_end", (void *)(intptr_t)rt_group_end},
+    {"rt_create_table", (void *)(intptr_t)rt_create_table},
+    {"rt_table_set_header", (void *)(intptr_t)rt_table_set_header},
+    {"rt_table_set_cell", (void *)(intptr_t)rt_table_set_cell},
+    {"rt_table_get_cell", (void *)(intptr_t)rt_table_get_cell},
+    {"rt_table_set_rows", (void *)(intptr_t)rt_table_set_rows},
+    {"rt_table_set_cols", (void *)(intptr_t)rt_table_set_cols},
+    {"rt_set_timer", (void *)(intptr_t)rt_set_timer},
+    {"rt_clear_timer", (void *)(intptr_t)rt_clear_timer},
+    {"rt_set_interval", (void *)(intptr_t)rt_set_interval},
+    {"rt_clear_interval", (void *)(intptr_t)rt_clear_interval},
+    {"rt_set_timeout", (void *)(intptr_t)rt_set_timeout},
+    {"rt_clear_timeout", (void *)(intptr_t)rt_clear_timeout},
+    {"rt_widget_set_min_size", (void *)(intptr_t)rt_widget_set_min_size},
+    {"rt_widget_set_max_size", (void *)(intptr_t)rt_widget_set_max_size},
+    {"rt_widget_set_fixed_size", (void *)(intptr_t)rt_widget_set_fixed_size},
+    {"rt_widget_set_tooltip", (void *)(intptr_t)rt_widget_set_tooltip},
+    {"rt_widget_set_style", (void *)(intptr_t)rt_widget_set_style},
+    {"rt_widget_set_padding", (void *)(intptr_t)rt_widget_set_padding},
+    {"rt_widget_remove", (void *)(intptr_t)rt_widget_remove},
+    {"rt_str_len", (void *)(intptr_t)rt_str_len},
+    {"rt_str_sub", (void *)(intptr_t)rt_str_sub},
+    {"rt_str_find", (void *)(intptr_t)rt_str_find},
+    {"rt_str_replace", (void *)(intptr_t)rt_str_replace},
+    {"rt_str_trim", (void *)(intptr_t)rt_str_trim},
+    {"rt_str_upper", (void *)(intptr_t)rt_str_upper},
+    {"rt_str_lower", (void *)(intptr_t)rt_str_lower},
+    {"rt_str_starts_with", (void *)(intptr_t)rt_str_starts_with},
+    {"rt_str_ends_with", (void *)(intptr_t)rt_str_ends_with},
+    {"rt_str_contains", (void *)(intptr_t)rt_str_contains},
+    {"rt_str_char_at", (void *)(intptr_t)rt_str_char_at},
+    {"rt_math_sqrt", (void *)(intptr_t)rt_math_sqrt},
+    {"rt_math_sin", (void *)(intptr_t)rt_math_sin},
+    {"rt_math_cos", (void *)(intptr_t)rt_math_cos},
+    {"rt_math_tan", (void *)(intptr_t)rt_math_tan},
+    {"rt_math_abs", (void *)(intptr_t)rt_math_abs},
+    {"rt_math_floor", (void *)(intptr_t)rt_math_floor},
+    {"rt_math_ceil", (void *)(intptr_t)rt_math_ceil},
+    {"rt_math_round", (void *)(intptr_t)rt_math_round},
+    {"rt_math_pow", (void *)(intptr_t)rt_math_pow},
+    {"rt_math_log", (void *)(intptr_t)rt_math_log},
+    {"rt_math_min", (void *)(intptr_t)rt_math_min},
+    {"rt_math_max", (void *)(intptr_t)rt_math_max},
+    {"rt_math_random", (void *)(intptr_t)rt_math_random},
+    {"rt_math_pi", (void *)(intptr_t)rt_math_pi},
+    {"rt_to_int", (void *)(intptr_t)rt_to_int},
+    {"rt_to_float", (void *)(intptr_t)rt_to_float},
     {nullptr, nullptr}};
 
 static std::string readFile(const std::string &p) {
