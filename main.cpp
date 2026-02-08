@@ -1,5 +1,7 @@
 #define QT_NO_KEYWORDS
+#ifndef QT_STATICPLUGIN
 #define QT_STATICPLUGIN
+#endif
 
 #ifdef QT_STATICPLUGIN
 #include <QtPlugin>
@@ -367,6 +369,8 @@ static std::atomic<long long> g_taskIdGen{1};
 static std::vector<std::thread> g_taskThreads;
 static std::mutex g_taskThreadsMutex;
 
+static void clearArrays();
+
 static CSMainWindow *currentWindow() {
   if (g_currentActivity >= 0 && g_currentActivity < (int)g_activities.size())
     return g_activities[g_currentActivity].window;
@@ -488,6 +492,7 @@ extern "C" void rt_window_end(void) {
   while (!g_layoutStack.empty())
     g_layoutStack.pop();
   clearStringPool();
+  clearArrays();
   delete g_app;
   g_app = nullptr;
 }
@@ -1333,7 +1338,9 @@ enum class TK {
   LtEq,
   GtEq,
   Plus,
+  PlusPlus,
   Minus,
+  MinusMinus,
   Star,
   Slash,
   Percent,
@@ -1387,8 +1394,12 @@ static const char *tkName(TK k) {
     return "'>='";
   case TK::Plus:
     return "'+'";
+  case TK::PlusPlus:
+    return "'++'";
   case TK::Minus:
     return "'-'";
+  case TK::MinusMinus:
+    return "'--'";
   case TK::Star:
     return "'*'";
   case TK::Slash:
@@ -1476,6 +1487,10 @@ public:
       return mkAt(TK::Question, "?", sl);
     case '+':
       adv();
+      if (pos_ < src_.size() && src_[pos_] == '+') {
+        adv();
+        return mkAt(TK::PlusPlus, "++", sl);
+      }
       return mkAt(TK::Plus, "+", sl);
     case '*':
       adv();
@@ -1488,6 +1503,10 @@ public:
       return mkAt(TK::Slash, "/", sl);
     case '-':
       adv();
+      if (pos_ < src_.size() && src_[pos_] == '-') {
+        adv();
+        return mkAt(TK::MinusMinus, "--", sl);
+      }
       return mkAt(TK::Minus, "-", sl);
     case '=':
       adv();
@@ -1763,7 +1782,22 @@ enum class AK {
   SetOnPause,
   SetOnBack,
   Concat,
-  Ternary
+  Ternary,
+  PreIncrement,
+  PreDecrement,
+  PostIncrement,
+  PostDecrement,
+  While,
+  For,
+  ArrayNew,
+  ArrayPush,
+  ArrayGet,
+  ArraySet,
+  ArrayLength,
+  ArrayPop,
+  ArrayClear,
+  ArrayRemove,
+  ArrayInsert
 };
 
 struct ASTNode {
@@ -1843,6 +1877,100 @@ struct TernaryExpr : ASTNode {
   TernaryExpr(SourceLoc l, ASTPtr cond, ASTPtr t, ASTPtr e)
       : ASTNode(AK::Ternary, l), condition(std::move(cond)),
         thenExpr(std::move(t)), elseExpr(std::move(e)) {}
+};
+
+struct PreIncrementExpr : ASTNode {
+  std::string varName;
+  PreIncrementExpr(SourceLoc l, std::string n)
+      : ASTNode(AK::PreIncrement, l), varName(std::move(n)) {}
+};
+
+struct PreDecrementExpr : ASTNode {
+  std::string varName;
+  PreDecrementExpr(SourceLoc l, std::string n)
+      : ASTNode(AK::PreDecrement, l), varName(std::move(n)) {}
+};
+
+struct PostIncrementExpr : ASTNode {
+  std::string varName;
+  PostIncrementExpr(SourceLoc l, std::string n)
+      : ASTNode(AK::PostIncrement, l), varName(std::move(n)) {}
+};
+
+struct PostDecrementExpr : ASTNode {
+  std::string varName;
+  PostDecrementExpr(SourceLoc l, std::string n)
+      : ASTNode(AK::PostDecrement, l), varName(std::move(n)) {}
+};
+
+struct WhileStmt : ASTNode {
+  ASTPtr condition;
+  std::vector<ASTPtr> body;
+  WhileStmt(SourceLoc l, ASTPtr cond)
+      : ASTNode(AK::While, l), condition(std::move(cond)) {}
+};
+
+struct ForStmt : ASTNode {
+  ASTPtr init;
+  ASTPtr condition;
+  ASTPtr update;
+  std::vector<ASTPtr> body;
+  ForStmt(SourceLoc l) : ASTNode(AK::For, l) {}
+};
+
+struct ArrayNewExpr : ASTNode {
+  std::vector<ASTPtr> initialElements; // optional initial values
+  ArrayNewExpr(SourceLoc l) : ASTNode(AK::ArrayNew, l) {}
+};
+
+struct ArrayPushStmt : ASTNode {
+  ASTPtr array, value;
+  ArrayPushStmt(SourceLoc l, ASTPtr a, ASTPtr v)
+      : ASTNode(AK::ArrayPush, l), array(std::move(a)), value(std::move(v)) {}
+};
+
+struct ArrayGetExpr : ASTNode {
+  ASTPtr array, index;
+  ArrayGetExpr(SourceLoc l, ASTPtr a, ASTPtr i)
+      : ASTNode(AK::ArrayGet, l), array(std::move(a)), index(std::move(i)) {}
+};
+
+struct ArraySetStmt : ASTNode {
+  ASTPtr array, index, value;
+  ArraySetStmt(SourceLoc l, ASTPtr a, ASTPtr i, ASTPtr v)
+      : ASTNode(AK::ArraySet, l), array(std::move(a)), index(std::move(i)),
+        value(std::move(v)) {}
+};
+
+struct ArrayLengthExpr : ASTNode {
+  ASTPtr array;
+  ArrayLengthExpr(SourceLoc l, ASTPtr a)
+      : ASTNode(AK::ArrayLength, l), array(std::move(a)) {}
+};
+
+struct ArrayPopExpr : ASTNode {
+  ASTPtr array;
+  ArrayPopExpr(SourceLoc l, ASTPtr a)
+      : ASTNode(AK::ArrayPop, l), array(std::move(a)) {}
+};
+
+struct ArrayClearStmt : ASTNode {
+  ASTPtr array;
+  ArrayClearStmt(SourceLoc l, ASTPtr a)
+      : ASTNode(AK::ArrayClear, l), array(std::move(a)) {}
+};
+
+struct ArrayRemoveStmt : ASTNode {
+  ASTPtr array, index;
+  ArrayRemoveStmt(SourceLoc l, ASTPtr a, ASTPtr i)
+      : ASTNode(AK::ArrayRemove, l), array(std::move(a)), index(std::move(i)) {}
+};
+
+struct ArrayInsertStmt : ASTNode {
+  ASTPtr array, index, value;
+  ArrayInsertStmt(SourceLoc l, ASTPtr a, ASTPtr i, ASTPtr v)
+      : ASTNode(AK::ArrayInsert, l), array(std::move(a)), index(std::move(i)),
+        value(std::move(v)) {}
 };
 
 struct FindWidgetExpr : ASTNode {
@@ -2141,26 +2269,32 @@ private:
 
   bool isKeyword(const std::string &s) {
     static const std::vector<std::string> kw = {
-        "window",      "button",
-        "label",       "input",
-        "checkbox",    "toggle",
-        "slider",      "progress",
-        "separator",   "spacer",
-        "column",      "row",
-        "print",       "task",
-        "var",         "if",
-        "else",        "true",
-        "false",       "set_text",
-        "get_text",    "set_visible",
-        "set_enabled", "set_progress",
-        "set_slider",  "get_slider",
-        "set_checked", "get_checked",
-        "find_widget", "message_box",
-        "confirm_box", "sleep_ms",
-        "get_tick_ms", "finish_activity",
-        "post_to_ui",  "on_init",
-        "on_destroy",  "on_resume",
-        "on_pause",    "on_back"};
+        "window",       "button",
+        "label",        "input",
+        "checkbox",     "toggle",
+        "slider",       "progress",
+        "separator",    "spacer",
+        "column",       "row",
+        "print",        "task",
+        "var",          "if",
+        "else",         "true",
+        "false",        "set_text",
+        "get_text",     "set_visible",
+        "set_enabled",  "set_progress",
+        "set_slider",   "get_slider",
+        "set_checked",  "get_checked",
+        "find_widget",  "message_box",
+        "confirm_box",  "sleep_ms",
+        "get_tick_ms",  "finish_activity",
+        "post_to_ui",   "on_init",
+        "on_destroy",   "on_resume",
+        "on_pause",     "on_back",
+        "while",        "for",
+        "array_new",    "array_push",
+        "array_get",    "array_set",
+        "array_length", "array_pop",
+        "array_clear",  "array_remove",
+        "array_insert"};
     for (auto &k : kw)
       if (s == k)
         return true;
@@ -2320,6 +2454,20 @@ private:
   }
 
   ASTPtr parseUnary() {
+    if (peek().kind == TK::PlusPlus) {
+      Token op = next();
+      Token name;
+      if (!ex(TK::Id, name))
+        return nullptr;
+      return std::make_unique<PreIncrementExpr>(op.loc, name.text);
+    }
+    if (peek().kind == TK::MinusMinus) {
+      Token op = next();
+      Token name;
+      if (!ex(TK::Id, name))
+        return nullptr;
+      return std::make_unique<PreDecrementExpr>(op.loc, name.text);
+    }
     if (peek().kind == TK::Bang) {
       Token op = next();
       auto e = parseUnary();
@@ -2329,7 +2477,6 @@ private:
                                            std::move(e));
     }
     if (peek().kind == TK::Minus) {
-      // Check if it's a unary minus (not a negative literal)
       Token op = next();
       auto e = parseUnary();
       if (!e)
@@ -2337,7 +2484,25 @@ private:
       return std::make_unique<UnaryOpExpr>(op.loc, UnaryOpKind::Negate,
                                            std::move(e));
     }
-    return parsePrimary();
+    return parsePostfix();
+  }
+  ASTPtr parsePostfix() {
+    auto expr = parsePrimary();
+    if (!expr)
+      return nullptr;
+    // Check for postfix ++ or -- on variable references
+    if (expr->kind == AK::VarRef) {
+      auto &vr = static_cast<VarRefExpr &>(*expr);
+      if (peek().kind == TK::PlusPlus) {
+        Token op = next();
+        return std::make_unique<PostIncrementExpr>(op.loc, vr.name);
+      }
+      if (peek().kind == TK::MinusMinus) {
+        Token op = next();
+        return std::make_unique<PostDecrementExpr>(op.loc, vr.name);
+      }
+    }
+    return expr;
   }
 
   ASTPtr parsePrimary() {
@@ -2442,6 +2607,68 @@ private:
           return nullptr;
         return std::make_unique<GetTickMsExpr>(p.loc);
       }
+      if (p.text == "array_new") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto an = std::make_unique<ArrayNewExpr>(p.loc);
+        // Optional initial elements: array_new(1, 2, 3)
+        if (peek().kind != TK::RP) {
+          auto elem = parseExpr();
+          if (!elem)
+            return nullptr;
+          an->initialElements.push_back(std::move(elem));
+          while (peek().kind == TK::Comma) {
+            next();
+            auto e2 = parseExpr();
+            if (!e2)
+              return nullptr;
+            an->initialElements.push_back(std::move(e2));
+          }
+        }
+        if (!exK(TK::RP))
+          return nullptr;
+        return an;
+      }
+      if (p.text == "array_get") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto arr = parseExpr();
+        if (!arr)
+          return nullptr;
+        if (!exK(TK::Comma))
+          return nullptr;
+        auto idx = parseExpr();
+        if (!idx)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<ArrayGetExpr>(p.loc, std::move(arr),
+                                              std::move(idx));
+      }
+      if (p.text == "array_length") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto arr = parseExpr();
+        if (!arr)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<ArrayLengthExpr>(p.loc, std::move(arr));
+      }
+      if (p.text == "array_pop") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto arr = parseExpr();
+        if (!arr)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        return std::make_unique<ArrayPopExpr>(p.loc, std::move(arr));
+      }
       // Variable reference
       if (!isKeyword(p.text)) {
         next();
@@ -2462,6 +2689,24 @@ private:
     if (p.kind == TK::Bad) {
       er(p.loc, p.text);
       return nullptr;
+    }
+    if (p.kind == TK::PlusPlus) {
+      Token op = next();
+      Token name;
+      if (!ex(TK::Id, name))
+        return nullptr;
+      if (!exK(TK::Semi))
+        return nullptr;
+      return std::make_unique<PreIncrementExpr>(op.loc, name.text);
+    }
+    if (p.kind == TK::MinusMinus) {
+      Token op = next();
+      Token name;
+      if (!ex(TK::Id, name))
+        return nullptr;
+      if (!exK(TK::Semi))
+        return nullptr;
+      return std::make_unique<PreDecrementExpr>(op.loc, name.text);
     }
     if (p.kind != TK::Id) {
       er(p.loc, "Expected statement, got " + std::string(tkName(p.kind)));
@@ -2495,6 +2740,10 @@ private:
       return parseVarDecl();
     if (p.text == "if")
       return parseIf();
+    if (p.text == "while")
+      return parseWhile();
+    if (p.text == "for")
+      return parseFor();
     if (p.text == "set_text")
       return parseSetText();
     if (p.text == "set_visible")
@@ -2517,13 +2766,37 @@ private:
       return parsePostToUI();
     if (p.text == "on_init")
       return parseOnInit();
-    if (p.text == "on_destroy")
-      return parseOnDestroy();
+    if (p.text == "array_push")
+      return parseArrayPush();
+    if (p.text == "array_set")
+      return parseArraySet();
+    if (p.text == "array_clear")
+      return parseArrayClear();
+    if (p.text == "array_remove")
+      return parseArrayRemove();
+    if (p.text == "array_insert")
+      return parseArrayInsert();
 
     // Check if it's a variable assignment: identifier = expr;
     Token p2 = peek2();
     if (p2.kind == TK::Eq) {
       return parseVarAssign();
+    }
+
+    // Post-increment/decrement as statement: i++; or i--;
+    if (p2.kind == TK::PlusPlus) {
+      Token name = next();
+      Token op = next();
+      if (!exK(TK::Semi))
+        return nullptr;
+      return std::make_unique<PostIncrementExpr>(name.loc, name.text);
+    }
+    if (p2.kind == TK::MinusMinus) {
+      Token name = next();
+      Token op = next();
+      if (!exK(TK::Semi))
+        return nullptr;
+      return std::make_unique<PostDecrementExpr>(name.loc, name.text);
     }
 
     er(p.loc, "Unknown statement '" + p.text + "'");
@@ -2561,12 +2834,11 @@ private:
     return std::make_unique<VarAssignStmt>(name.loc, name.text, std::move(val));
   }
 
-  // --- if / else if / else ---
   ASTPtr parseIf() {
     Token kw = next(); // consume 'if'
     auto ifNode = std::make_unique<IfStmt>(kw.loc);
 
-    // Parse 'if' condition
+    // 'if' condition
     if (!exK(TK::LP))
       return nullptr;
     auto cond = parseExpr();
@@ -2646,7 +2918,164 @@ private:
     return ifNode;
   }
 
-  // --- arrow func ---
+  ASTPtr parseWhile() {
+    Token kw = next(); // consume 'while'
+    if (!exK(TK::LP))
+      return nullptr;
+    auto cond = parseExpr();
+    if (!cond)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    auto ws = std::make_unique<WhileStmt>(kw.loc, std::move(cond));
+    if (!exK(TK::LB))
+      return nullptr;
+    while (peek().kind != TK::RB && peek().kind != TK::Eof) {
+      auto s = parseStmt();
+      if (!s) {
+        if (bad_)
+          return nullptr;
+        continue;
+      }
+      ws->body.push_back(std::move(s));
+    }
+    if (!exK(TK::RB))
+      return nullptr;
+    return ws;
+  }
+  ASTPtr parseFor() {
+    Token kw = next(); // consume 'for'
+    if (!exK(TK::LP))
+      return nullptr;
+    auto fs = std::make_unique<ForStmt>(kw.loc);
+    // Init part: var decl, assignment, increment, or empty
+    if (peek().kind == TK::Semi) {
+      next(); // empty init
+      fs->init = nullptr;
+    } else if (peek().kind == TK::Id && peek().text == "var") {
+      fs->init = parseVarDecl(); // consumes semicolon
+      if (!fs->init)
+        return nullptr;
+    } else {
+      // Could be assignment (x = expr;) or increment (x++;/++x;)
+      Token p1 = peek();
+      if (p1.kind == TK::PlusPlus) {
+        Token op = next();
+        Token name;
+        if (!ex(TK::Id, name))
+          return nullptr;
+        if (!exK(TK::Semi))
+          return nullptr;
+        fs->init = std::make_unique<PreIncrementExpr>(op.loc, name.text);
+      } else if (p1.kind == TK::MinusMinus) {
+        Token op = next();
+        Token name;
+        if (!ex(TK::Id, name))
+          return nullptr;
+        if (!exK(TK::Semi))
+          return nullptr;
+        fs->init = std::make_unique<PreDecrementExpr>(op.loc, name.text);
+      } else if (p1.kind == TK::Id) {
+        Token p2 = peek2();
+        if (p2.kind == TK::Eq) {
+          fs->init = parseVarAssign();
+          if (!fs->init)
+            return nullptr;
+        } else if (p2.kind == TK::PlusPlus) {
+          Token name = next();
+          next(); // consume ++
+          if (!exK(TK::Semi))
+            return nullptr;
+          fs->init = std::make_unique<PostIncrementExpr>(name.loc, name.text);
+        } else if (p2.kind == TK::MinusMinus) {
+          Token name = next();
+          next(); // consume --
+          if (!exK(TK::Semi))
+            return nullptr;
+          fs->init = std::make_unique<PostDecrementExpr>(name.loc, name.text);
+        } else {
+          er(p1.loc, "Expected for-loop init statement");
+          return nullptr;
+        }
+      } else {
+        er(p1.loc, "Expected for-loop init");
+        return nullptr;
+      }
+    }
+    // Condition part
+    if (peek().kind == TK::Semi) {
+      next(); // empty condition = always true
+      fs->condition = std::make_unique<IntLitExpr>(kw.loc, 1);
+    } else {
+      fs->condition = parseExpr();
+      if (!fs->condition)
+        return nullptr;
+      if (!exK(TK::Semi))
+        return nullptr;
+    }
+    // Update part
+    if (peek().kind == TK::RP) {
+      fs->update = nullptr; // empty update
+    } else {
+      Token p1 = peek();
+      if (p1.kind == TK::PlusPlus) {
+        Token op = next();
+        Token name;
+        if (!ex(TK::Id, name))
+          return nullptr;
+        fs->update = std::make_unique<PreIncrementExpr>(op.loc, name.text);
+      } else if (p1.kind == TK::MinusMinus) {
+        Token op = next();
+        Token name;
+        if (!ex(TK::Id, name))
+          return nullptr;
+        fs->update = std::make_unique<PreDecrementExpr>(op.loc, name.text);
+      } else if (p1.kind == TK::Id) {
+        Token p2 = peek2();
+        if (p2.kind == TK::PlusPlus) {
+          Token name = next();
+          next();
+          fs->update = std::make_unique<PostIncrementExpr>(name.loc, name.text);
+        } else if (p2.kind == TK::MinusMinus) {
+          Token name = next();
+          next();
+          fs->update = std::make_unique<PostDecrementExpr>(name.loc, name.text);
+        } else if (p2.kind == TK::Eq) {
+          // assignment without semicolon in update position
+          Token name = next();
+          next(); // consume =
+          auto val = parseExpr();
+          if (!val)
+            return nullptr;
+          fs->update = std::make_unique<VarAssignStmt>(name.loc, name.text,
+                                                       std::move(val));
+        } else {
+          er(p1.loc, "Expected for-loop update expression");
+          return nullptr;
+        }
+      } else {
+        er(p1.loc, "Expected for-loop update");
+        return nullptr;
+      }
+    }
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::LB))
+      return nullptr;
+    while (peek().kind != TK::RB && peek().kind != TK::Eof) {
+      auto s = parseStmt();
+      if (!s) {
+        if (bad_)
+          return nullptr;
+        continue;
+      }
+      fs->body.push_back(std::move(s));
+    }
+    if (!exK(TK::RB))
+      return nullptr;
+    return fs;
+  }
+  // arrow func
   std::unique_ptr<ArrowFunc> parseArrow() {
     SourceLoc sl = peek().loc;
     if (!exK(TK::LP))
@@ -3228,6 +3657,110 @@ private:
       return nullptr;
     return std::make_unique<SetOnDestroyStmt>(id.loc, std::move(cb));
   }
+
+  ASTPtr parseArrayPush() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto arr = parseExpr();
+    if (!arr)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto val = parseExpr();
+    if (!val)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ArrayPushStmt>(id.loc, std::move(arr),
+                                           std::move(val));
+  }
+
+  ASTPtr parseArraySet() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto arr = parseExpr();
+    if (!arr)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto idx = parseExpr();
+    if (!idx)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto val = parseExpr();
+    if (!val)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ArraySetStmt>(id.loc, std::move(arr),
+                                          std::move(idx), std::move(val));
+  }
+
+  ASTPtr parseArrayClear() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto arr = parseExpr();
+    if (!arr)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ArrayClearStmt>(id.loc, std::move(arr));
+  }
+
+  ASTPtr parseArrayRemove() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto arr = parseExpr();
+    if (!arr)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto idx = parseExpr();
+    if (!idx)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ArrayRemoveStmt>(id.loc, std::move(arr),
+                                             std::move(idx));
+  }
+
+  ASTPtr parseArrayInsert() {
+    Token id = next();
+    if (!exK(TK::LP))
+      return nullptr;
+    auto arr = parseExpr();
+    if (!arr)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto idx = parseExpr();
+    if (!idx)
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto val = parseExpr();
+    if (!val)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ArrayInsertStmt>(id.loc, std::move(arr),
+                                             std::move(idx), std::move(val));
+  }
 };
 
 // Runtime helpers for string concatenation and int-to-string conversion
@@ -3251,6 +3784,98 @@ extern "C" long long rt_str_eq(const char *a, const char *b) {
   if (!a || !b)
     return 0;
   return strcmp(a, b) == 0 ? 1 : 0;
+}
+
+struct RtArray {
+  std::vector<long long> data;
+};
+
+static std::vector<RtArray *> g_arrays;
+static std::mutex g_arrayMutex;
+
+extern "C" long long rt_array_new(void) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  auto *arr = new RtArray();
+  long long id = (long long)g_arrays.size();
+  g_arrays.push_back(arr);
+  return id;
+}
+
+extern "C" void rt_array_push(long long id, long long value) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id])
+    g_arrays[id]->data.push_back(value);
+}
+
+extern "C" long long rt_array_get(long long id, long long index) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id]) {
+    auto &d = g_arrays[id]->data;
+    if (index >= 0 && index < (long long)d.size())
+      return d[index];
+  }
+  return 0;
+}
+
+extern "C" void rt_array_set(long long id, long long index, long long value) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id]) {
+    auto &d = g_arrays[id]->data;
+    if (index >= 0 && index < (long long)d.size())
+      d[index] = value;
+  }
+}
+
+extern "C" long long rt_array_length(long long id) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id])
+    return (long long)g_arrays[id]->data.size();
+  return 0;
+}
+
+extern "C" long long rt_array_pop(long long id) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id]) {
+    auto &d = g_arrays[id]->data;
+    if (!d.empty()) {
+      long long val = d.back();
+      d.pop_back();
+      return val;
+    }
+  }
+  return 0;
+}
+
+extern "C" void rt_array_clear(long long id) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id])
+    g_arrays[id]->data.clear();
+}
+
+extern "C" void rt_array_remove(long long id, long long index) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id]) {
+    auto &d = g_arrays[id]->data;
+    if (index >= 0 && index < (long long)d.size())
+      d.erase(d.begin() + index);
+  }
+}
+
+extern "C" void rt_array_insert(long long id, long long index,
+                                long long value) {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  if (id >= 0 && id < (long long)g_arrays.size() && g_arrays[id]) {
+    auto &d = g_arrays[id]->data;
+    if (index >= 0 && index <= (long long)d.size())
+      d.insert(d.begin() + index, value);
+  }
+}
+
+static void clearArrays() {
+  std::lock_guard<std::mutex> lk(g_arrayMutex);
+  for (auto *a : g_arrays)
+    delete a;
+  g_arrays.clear();
 }
 
 class Codegen {
@@ -3354,6 +3979,9 @@ private:
       fSetOnBack;
   llvm::FunctionCallee fConcat, fIntToStr, fFloatToStr;
   llvm::FunctionCallee fStrEq;
+  llvm::FunctionCallee fArrayNew, fArrayPush, fArrayGet, fArraySet;
+  llvm::FunctionCallee fArrayLength, fArrayPop, fArrayClear;
+  llvm::FunctionCallee fArrayRemove, fArrayInsert;
 
   llvm::Type *Void() { return llvm::Type::getVoidTy(*ctx_); }
   llvm::Type *Ptr() { return llvm::PointerType::getUnqual(*ctx_); }
@@ -3495,6 +4123,28 @@ private:
         "rt_float_to_str", llvm::FunctionType::get(Ptr(), {F64()}, false));
     fStrEq = M->getOrInsertFunction(
         "rt_str_eq", llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
+    fArrayNew = M->getOrInsertFunction("rt_array_new",
+                                       llvm::FunctionType::get(I64(), false));
+    fArrayPush = M->getOrInsertFunction(
+        "rt_array_push",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fArrayGet = M->getOrInsertFunction(
+        "rt_array_get", llvm::FunctionType::get(I64(), {I64(), I64()}, false));
+    fArraySet = M->getOrInsertFunction(
+        "rt_array_set",
+        llvm::FunctionType::get(Void(), {I64(), I64(), I64()}, false));
+    fArrayLength = M->getOrInsertFunction(
+        "rt_array_length", llvm::FunctionType::get(I64(), {I64()}, false));
+    fArrayPop = M->getOrInsertFunction(
+        "rt_array_pop", llvm::FunctionType::get(I64(), {I64()}, false));
+    fArrayClear = M->getOrInsertFunction(
+        "rt_array_clear", llvm::FunctionType::get(Void(), {I64()}, false));
+    fArrayRemove = M->getOrInsertFunction(
+        "rt_array_remove",
+        llvm::FunctionType::get(Void(), {I64(), I64()}, false));
+    fArrayInsert = M->getOrInsertFunction(
+        "rt_array_insert",
+        llvm::FunctionType::get(Void(), {I64(), I64(), I64()}, false));
   }
 
   llvm::Value *str(const std::string &s) {
@@ -3717,6 +4367,91 @@ private:
     case AK::GetTickMs: {
       return B.CreateCall(fGetTickMs);
     }
+
+    case AK::ArrayNew: {
+      auto &an = static_cast<const ArrayNewExpr &>(n);
+      auto *arrId = B.CreateCall(fArrayNew);
+      // Push initial elements
+      for (auto &elem : an.initialElements) {
+        auto *val = emitExpr(*elem);
+        B.CreateCall(fArrayPush, {arrId, valToI64(val)});
+      }
+      return arrId;
+    }
+    case AK::ArrayGet: {
+      auto &ag = static_cast<const ArrayGetExpr &>(n);
+      auto *arr = emitExpr(*ag.array);
+      auto *idx = emitExpr(*ag.index);
+      return B.CreateCall(fArrayGet, {valToI64(arr), valToI64(idx)});
+    }
+    case AK::ArrayLength: {
+      auto &al = static_cast<const ArrayLengthExpr &>(n);
+      auto *arr = emitExpr(*al.array);
+      return B.CreateCall(fArrayLength, {valToI64(arr)});
+    }
+    case AK::ArrayPop: {
+      auto &ap = static_cast<const ArrayPopExpr &>(n);
+      auto *arr = emitExpr(*ap.array);
+      return B.CreateCall(fArrayPop, {valToI64(arr)});
+    }
+
+    case AK::PreIncrement: {
+      auto &pi = static_cast<const PreIncrementExpr &>(n);
+      VarInfo *vi = lookupVar(pi.varName);
+      if (!vi)
+        return i64(0);
+      auto *old = B.CreateLoad(vi->type, vi->gv, pi.varName);
+      llvm::Value *newVal;
+      if (vi->type->isDoubleTy())
+        newVal = B.CreateFAdd(old, llvm::ConstantFP::get(F64(), 1.0));
+      else
+        newVal = B.CreateAdd(old, llvm::ConstantInt::get(vi->type, 1));
+      B.CreateStore(newVal, vi->gv);
+      return newVal; // pre: returns NEW value
+    }
+    case AK::PreDecrement: {
+      auto &pd = static_cast<const PreDecrementExpr &>(n);
+      VarInfo *vi = lookupVar(pd.varName);
+      if (!vi)
+        return i64(0);
+      auto *old = B.CreateLoad(vi->type, vi->gv, pd.varName);
+      llvm::Value *newVal;
+      if (vi->type->isDoubleTy())
+        newVal = B.CreateFSub(old, llvm::ConstantFP::get(F64(), 1.0));
+      else
+        newVal = B.CreateSub(old, llvm::ConstantInt::get(vi->type, 1));
+      B.CreateStore(newVal, vi->gv);
+      return newVal; // pre: returns NEW value
+    }
+    case AK::PostIncrement: {
+      auto &pi = static_cast<const PostIncrementExpr &>(n);
+      VarInfo *vi = lookupVar(pi.varName);
+      if (!vi)
+        return i64(0);
+      auto *old = B.CreateLoad(vi->type, vi->gv, pi.varName);
+      llvm::Value *newVal;
+      if (vi->type->isDoubleTy())
+        newVal = B.CreateFAdd(old, llvm::ConstantFP::get(F64(), 1.0));
+      else
+        newVal = B.CreateAdd(old, llvm::ConstantInt::get(vi->type, 1));
+      B.CreateStore(newVal, vi->gv);
+      return old; // post: returns OLD value
+    }
+    case AK::PostDecrement: {
+      auto &pd = static_cast<const PostDecrementExpr &>(n);
+      VarInfo *vi = lookupVar(pd.varName);
+      if (!vi)
+        return i64(0);
+      auto *old = B.CreateLoad(vi->type, vi->gv, pd.varName);
+      llvm::Value *newVal;
+      if (vi->type->isDoubleTy())
+        newVal = B.CreateFSub(old, llvm::ConstantFP::get(F64(), 1.0));
+      else
+        newVal = B.CreateSub(old, llvm::ConstantInt::get(vi->type, 1));
+      B.CreateStore(newVal, vi->gv);
+      return old; // post: returns OLD value
+    }
+
     case AK::Ternary: {
       auto &te = static_cast<const TernaryExpr &>(n);
       // Evaluate condition
@@ -4030,6 +4765,52 @@ private:
       }
       return true;
     }
+
+    case AK::For: {
+      auto &fs = static_cast<const ForStmt &>(n);
+      llvm::Function *fn = B.GetInsertBlock()->getParent();
+      if (fs.init)
+        emitNode(*fs.init);
+      auto *condBB = llvm::BasicBlock::Create(*ctx_, "for.cond", fn);
+      auto *bodyBB = llvm::BasicBlock::Create(*ctx_, "for.body", fn);
+      auto *updateBB = llvm::BasicBlock::Create(*ctx_, "for.update", fn);
+      auto *exitBB = llvm::BasicBlock::Create(*ctx_, "for.exit", fn);
+      B.CreateBr(condBB);
+      B.SetInsertPoint(condBB);
+      auto *condVal = emitExpr(*fs.condition);
+      auto *condBool = valToBool(condVal);
+      B.CreateCondBr(condBool, bodyBB, exitBB);
+      B.SetInsertPoint(bodyBB);
+      for (auto &s : fs.body)
+        emitNode(*s);
+      B.CreateBr(updateBB);
+      B.SetInsertPoint(updateBB);
+      if (fs.update)
+        emitNode(*fs.update);
+      B.CreateBr(condBB);
+      B.SetInsertPoint(exitBB);
+      return true;
+    }
+
+    case AK::While: {
+      auto &ws = static_cast<const WhileStmt &>(n);
+      llvm::Function *fn = B.GetInsertBlock()->getParent();
+      auto *condBB = llvm::BasicBlock::Create(*ctx_, "while.cond", fn);
+      auto *bodyBB = llvm::BasicBlock::Create(*ctx_, "while.body", fn);
+      auto *exitBB = llvm::BasicBlock::Create(*ctx_, "while.exit", fn);
+      B.CreateBr(condBB);
+      B.SetInsertPoint(condBB);
+      auto *condVal = emitExpr(*ws.condition);
+      auto *condBool = valToBool(condVal);
+      B.CreateCondBr(condBool, bodyBB, exitBB);
+      B.SetInsertPoint(bodyBB);
+      for (auto &s : ws.body)
+        emitNode(*s);
+      B.CreateBr(condBB);
+      B.SetInsertPoint(exitBB);
+      return true;
+    }
+
     case AK::If: {
       auto &ifn = static_cast<const IfStmt &>(n);
       llvm::Function *fn = B.GetInsertBlock()->getParent();
@@ -4142,6 +4923,51 @@ private:
       B.CreateCall(fSetOnDestroy, {makeCb(*sd.callback)});
       return true;
     }
+
+    case AK::ArrayPush: {
+      auto &ap = static_cast<const ArrayPushStmt &>(n);
+      auto *arr = emitExpr(*ap.array);
+      auto *val = emitExpr(*ap.value);
+      B.CreateCall(fArrayPush, {valToI64(arr), valToI64(val)});
+      return true;
+    }
+    case AK::ArraySet: {
+      auto &as = static_cast<const ArraySetStmt &>(n);
+      auto *arr = emitExpr(*as.array);
+      auto *idx = emitExpr(*as.index);
+      auto *val = emitExpr(*as.value);
+      B.CreateCall(fArraySet, {valToI64(arr), valToI64(idx), valToI64(val)});
+      return true;
+    }
+    case AK::ArrayClear: {
+      auto &ac = static_cast<const ArrayClearStmt &>(n);
+      auto *arr = emitExpr(*ac.array);
+      B.CreateCall(fArrayClear, {valToI64(arr)});
+      return true;
+    }
+    case AK::ArrayRemove: {
+      auto &ar = static_cast<const ArrayRemoveStmt &>(n);
+      auto *arr = emitExpr(*ar.array);
+      auto *idx = emitExpr(*ar.index);
+      B.CreateCall(fArrayRemove, {valToI64(arr), valToI64(idx)});
+      return true;
+    }
+    case AK::ArrayInsert: {
+      auto &ai = static_cast<const ArrayInsertStmt &>(n);
+      auto *arr = emitExpr(*ai.array);
+      auto *idx = emitExpr(*ai.index);
+      auto *val = emitExpr(*ai.value);
+      B.CreateCall(fArrayInsert, {valToI64(arr), valToI64(idx), valToI64(val)});
+      return true;
+    }
+
+    case AK::PreIncrement:
+    case AK::PreDecrement:
+    case AK::PostIncrement:
+    case AK::PostDecrement: {
+      emitExpr(n); // reuse expression codegen, discard result
+      return true;
+    }
     default:
       return false;
     }
@@ -4209,6 +5035,15 @@ static const Sym g_syms[] = {
     {"rt_int_to_str", (void *)(intptr_t)rt_int_to_str},
     {"rt_float_to_str", (void *)(intptr_t)rt_float_to_str},
     {"rt_str_eq", (void *)(intptr_t)rt_str_eq},
+    {"rt_array_new", (void *)(intptr_t)rt_array_new},
+    {"rt_array_push", (void *)(intptr_t)rt_array_push},
+    {"rt_array_get", (void *)(intptr_t)rt_array_get},
+    {"rt_array_set", (void *)(intptr_t)rt_array_set},
+    {"rt_array_length", (void *)(intptr_t)rt_array_length},
+    {"rt_array_pop", (void *)(intptr_t)rt_array_pop},
+    {"rt_array_clear", (void *)(intptr_t)rt_array_clear},
+    {"rt_array_remove", (void *)(intptr_t)rt_array_remove},
+    {"rt_array_insert", (void *)(intptr_t)rt_array_insert},
     {nullptr, nullptr}};
 
 static std::string readFile(const std::string &p) {
