@@ -1422,6 +1422,11 @@ class Lexer {
 public:
   explicit Lexer(const std::string &s) : src_(s), pos_(0) {}
   Token next() {
+    Token t = nextImpl();
+    prevKind_ = t.kind;
+    return t;
+  }
+  Token nextImpl() {
     skipWS();
     if (pos_ >= src_.size())
       return mk(TK::Eof, "");
@@ -1432,7 +1437,9 @@ public:
     if (c >= '0' && c <= '9')
       return lexNum(false);
     if (c == '-' && pos_ + 1 < src_.size() && src_[pos_ + 1] >= '0' &&
-        src_[pos_ + 1] <= '9')
+        src_[pos_ + 1] <= '9' && prevKind_ != TK::Int &&
+        prevKind_ != TK::Float && prevKind_ != TK::Str && prevKind_ != TK::Id &&
+        prevKind_ != TK::RP)
       return lexNum(true);
     if (isIS(c))
       return lexId();
@@ -1530,13 +1537,14 @@ public:
   Token peek() {
     size_t sp = pos_;
     SourceLoc sl = loc_;
-    Token t = next();
+    Token t = nextImpl();
     pos_ = sp;
     loc_ = sl;
     return t;
   }
 
 private:
+  TK prevKind_ = TK::Bad;
   std::string src_;
   size_t pos_;
   SourceLoc loc_;
@@ -3205,6 +3213,14 @@ extern "C" const char *rt_float_to_str(double v) {
   return poolStr(oss.str());
 }
 
+extern "C" long long rt_str_eq(const char *a, const char *b) {
+  if (a == b)
+    return 1;
+  if (!a || !b)
+    return 0;
+  return strcmp(a, b) == 0 ? 1 : 0;
+}
+
 class Codegen {
 public:
   Codegen()
@@ -3305,6 +3321,7 @@ private:
   llvm::FunctionCallee fSetOnInit, fSetOnDestroy, fSetOnResume, fSetOnPause,
       fSetOnBack;
   llvm::FunctionCallee fConcat, fIntToStr, fFloatToStr;
+  llvm::FunctionCallee fStrEq;
 
   llvm::Type *Void() { return llvm::Type::getVoidTy(*ctx_); }
   llvm::Type *Ptr() { return llvm::PointerType::getUnqual(*ctx_); }
@@ -3444,6 +3461,8 @@ private:
         "rt_int_to_str", llvm::FunctionType::get(Ptr(), {I64()}, false));
     fFloatToStr = M->getOrInsertFunction(
         "rt_float_to_str", llvm::FunctionType::get(Ptr(), {F64()}, false));
+    fStrEq = M->getOrInsertFunction(
+        "rt_str_eq", llvm::FunctionType::get(I64(), {Ptr(), Ptr()}, false));
   }
 
   llvm::Value *str(const std::string &s) {
@@ -3510,6 +3529,20 @@ private:
         if (!rIsPtr)
           rhs = valToStr(rhs);
         return B.CreateCall(fConcat, {lhs, rhs});
+      }
+
+      // String equality comparison
+      if ((bo.op == BinOpKind::EqEq || bo.op == BinOpKind::NotEq) &&
+          (lIsPtr || rIsPtr)) {
+        if (!lIsPtr)
+          lhs = valToStr(lhs);
+        if (!rIsPtr)
+          rhs = valToStr(rhs);
+        auto *eq = B.CreateCall(fStrEq, {lhs, rhs});
+        if (bo.op == BinOpKind::NotEq) {
+          return B.CreateZExt(B.CreateICmpEQ(eq, i64(0)), I64());
+        }
+        return eq;
       }
 
       if (lIsFloat || rIsFloat) {
@@ -4064,6 +4097,7 @@ static const Sym g_syms[] = {
     {"rt_concat", (void *)(intptr_t)rt_concat},
     {"rt_int_to_str", (void *)(intptr_t)rt_int_to_str},
     {"rt_float_to_str", (void *)(intptr_t)rt_float_to_str},
+    {"rt_str_eq", (void *)(intptr_t)rt_str_eq},
     {nullptr, nullptr}};
 
 static std::string readFile(const std::string &p) {
