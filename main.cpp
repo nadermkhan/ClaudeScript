@@ -469,6 +469,7 @@ extern "C" void rt_window_end(void) {
 
   while (!g_layoutStack.empty())
     g_layoutStack.pop();
+  clearStringPool();
   delete g_app;
   g_app = nullptr;
 }
@@ -934,33 +935,29 @@ extern "C" const char *rt_widget_get_text(long long h) {
   std::lock_guard<std::recursive_mutex> lk(g_widgetMutex);
   if (!validHandle(h))
     return "";
-  static thread_local std::string buf;
+  std::string result;
   QWidget *w = g_widgets[h].widget;
   if (QThread::currentThread() != g_app->thread()) {
     QMetaObject::invokeMethod(
         w,
-        [w, &buf]() {
+        [w, &result]() {
           if (auto *edit = qobject_cast<QLineEdit *>(w))
-            buf = edit->text().toUtf8().constData();
+            result = edit->text().toUtf8().constData();
           else if (auto *lbl = qobject_cast<QLabel *>(w))
-            buf = lbl->text().toUtf8().constData();
+            result = lbl->text().toUtf8().constData();
           else if (auto *btn = qobject_cast<QPushButton *>(w))
-            buf = btn->text().toUtf8().constData();
-          else
-            buf.clear();
+            result = btn->text().toUtf8().constData();
         },
         Qt::BlockingQueuedConnection);
   } else {
     if (auto *edit = qobject_cast<QLineEdit *>(w))
-      buf = edit->text().toUtf8().constData();
+      result = edit->text().toUtf8().constData();
     else if (auto *lbl = qobject_cast<QLabel *>(w))
-      buf = lbl->text().toUtf8().constData();
+      result = lbl->text().toUtf8().constData();
     else if (auto *btn = qobject_cast<QPushButton *>(w))
-      buf = btn->text().toUtf8().constData();
-    else
-      buf.clear();
+      result = btn->text().toUtf8().constData();
   }
-  return buf.c_str();
+  return poolStr(std::move(result));
 }
 
 extern "C" void rt_widget_set_hint(long long h, const char *hint) {
@@ -1077,26 +1074,22 @@ extern "C" void rt_set_clipboard(const char *text) {
 }
 
 extern "C" const char *rt_get_clipboard(void) {
-  static thread_local std::string buf;
+  std::string result;
   if (g_app && QThread::currentThread() != g_app->thread()) {
     QMetaObject::invokeMethod(
         g_app,
-        [&buf]() {
+        [&result]() {
           QClipboard *cb = QApplication::clipboard();
           if (cb)
-            buf = cb->text().toUtf8().constData();
-          else
-            buf.clear();
+            result = cb->text().toUtf8().constData();
         },
         Qt::BlockingQueuedConnection);
   } else {
     QClipboard *cb = QApplication::clipboard();
     if (cb)
-      buf = cb->text().toUtf8().constData();
-    else
-      buf.clear();
+      result = cb->text().toUtf8().constData();
   }
-  return buf.c_str();
+  return poolStr(std::move(result));
 }
 
 extern "C" void rt_set_on_init(void (*fn)(void)) {
@@ -3179,25 +3172,37 @@ private:
   }
 };
 
+// String pool to keep returned strings alive until window closes
+static std::vector<std::string *> g_stringPool;
+static std::mutex g_stringPoolMutex;
+
+static const char *poolStr(std::string s) {
+  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
+  auto *p = new std::string(std::move(s));
+  g_stringPool.push_back(p);
+  return p->c_str();
+}
+
+static void clearStringPool() {
+  std::lock_guard<std::mutex> lk(g_stringPoolMutex);
+  for (auto *p : g_stringPool)
+    delete p;
+  g_stringPool.clear();
+}
+
 // Runtime helpers for string concatenation and int-to-string conversion
 extern "C" const char *rt_concat(const char *a, const char *b) {
-  static thread_local std::string buf;
-  buf = std::string(a ? a : "") + std::string(b ? b : "");
-  return buf.c_str();
+  return poolStr(std::string(a ? a : "") + std::string(b ? b : ""));
 }
 
 extern "C" const char *rt_int_to_str(long long v) {
-  static thread_local std::string buf;
-  buf = std::to_string(v);
-  return buf.c_str();
+  return poolStr(std::to_string(v));
 }
 
 extern "C" const char *rt_float_to_str(double v) {
-  static thread_local std::string buf;
   std::ostringstream oss;
   oss << v;
-  buf = oss.str();
-  return buf.c_str();
+  return poolStr(oss.str());
 }
 
 class Codegen {
