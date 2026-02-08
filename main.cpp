@@ -448,6 +448,9 @@ extern "C" void rt_window_create(const char *title, int w, int h) {
   g_layoutStack.push(act.rootLayout);
 }
 
+static void clearWindowDefs();
+static void clearArrays();
+
 extern "C" void rt_window_end(void) {
   if (g_currentActivity < 0 || g_currentActivity >= (int)g_activities.size())
     return;
@@ -493,6 +496,7 @@ extern "C" void rt_window_end(void) {
     g_layoutStack.pop();
   clearStringPool();
   clearArrays();
+  clearWindowDefs();
   delete g_app;
   g_app = nullptr;
 }
@@ -1797,7 +1801,13 @@ enum class AK {
   ArrayPop,
   ArrayClear,
   ArrayRemove,
-  ArrayInsert
+  ArrayInsert,
+  FuncDecl,
+  FuncCall,
+  Return,
+  RegisterWindow,
+  Navigate,
+  StartWindow
 };
 
 struct ASTNode {
@@ -1973,6 +1983,32 @@ struct ArrayInsertStmt : ASTNode {
         value(std::move(v)) {}
 };
 
+struct FuncParam {
+  std::string name;
+  SourceLoc loc;
+};
+
+struct FuncDeclStmt : ASTNode {
+  std::string name;
+  std::vector<FuncParam> params;
+  std::vector<ASTPtr> body;
+  FuncDeclStmt(SourceLoc l, std::string n)
+      : ASTNode(AK::FuncDecl, l), name(std::move(n)) {}
+};
+
+struct FuncCallExpr : ASTNode {
+  std::string name;
+  std::vector<ASTPtr> args;
+  FuncCallExpr(SourceLoc l, std::string n)
+      : ASTNode(AK::FuncCall, l), name(std::move(n)) {}
+};
+
+struct ReturnStmt : ASTNode {
+  ASTPtr value; // can be null for bare return
+  ReturnStmt(SourceLoc l, ASTPtr v)
+      : ASTNode(AK::Return, l), value(std::move(v)) {}
+};
+
 struct FindWidgetExpr : ASTNode {
   ASTPtr idExpr;
   FindWidgetExpr(SourceLoc l, ASTPtr e)
@@ -2013,6 +2049,28 @@ struct GetTickMsExpr : ASTNode {
 struct ArrowFunc : ASTNode {
   std::vector<ASTPtr> body;
   ArrowFunc(SourceLoc l) : ASTNode(AK::Arrow, l) {}
+};
+
+struct RegisterWindowStmt : ASTNode {
+  std::string name;
+  int width, height;
+  std::unique_ptr<ArrowFunc> buildFunc;
+  RegisterWindowStmt(SourceLoc l, std::string n, int w, int h,
+                     std::unique_ptr<ArrowFunc> bf)
+      : ASTNode(AK::RegisterWindow, l), name(std::move(n)), width(w), height(h),
+        buildFunc(std::move(bf)) {}
+};
+
+struct NavigateStmt : ASTNode {
+  ASTPtr target; // string expression for window name
+  NavigateStmt(SourceLoc l, ASTPtr t)
+      : ASTNode(AK::Navigate, l), target(std::move(t)) {}
+};
+
+struct StartWindowStmt : ASTNode {
+  ASTPtr target;
+  StartWindowStmt(SourceLoc l, ASTPtr t)
+      : ASTNode(AK::StartWindow, l), target(std::move(t)) {}
 };
 
 struct PrintStmt : ASTNode {
@@ -2208,9 +2266,32 @@ class Parser {
 public:
   explicit Parser(Lexer &l) : lex_(l), bad_(false) {}
   std::unique_ptr<WindowStmt> parseProgram() {
+    // Parse top-level declarations before window: fn, screen
+    std::vector<ASTPtr> preDecls;
+    while (peek().kind == TK::Id &&
+           (peek().text == "fn" || peek().text == "screen")) {
+      if (peek().text == "fn") {
+        auto fd = parseFuncDecl();
+        if (!fd)
+          return nullptr;
+        preDecls.push_back(std::move(fd));
+      } else if (peek().text == "screen") {
+        auto sd = parseRegisterWindow();
+        if (!sd)
+          return nullptr;
+        preDecls.push_back(std::move(sd));
+      }
+    }
+
     auto w = parseWindow();
     if (!w)
       return nullptr;
+
+    // Insert pre-declarations at the beginning of window body
+    for (int i = (int)preDecls.size() - 1; i >= 0; i--) {
+      w->body.insert(w->body.begin(), std::move(preDecls[i]));
+    }
+
     Token e = next();
     if (e.kind != TK::Eof) {
       er(e.loc, "Expected EOF, got " + std::string(tkName(e.kind)));
@@ -2218,6 +2299,7 @@ public:
     }
     return w;
   }
+
   bool hasError() const { return bad_; }
   const std::vector<Error> &errors() const { return errs_; }
 
@@ -2294,7 +2376,10 @@ private:
         "array_get",    "array_set",
         "array_length", "array_pop",
         "array_clear",  "array_remove",
-        "array_insert"};
+        "array_insert", "fn",
+        "return",       "navigate",
+        "start_window", "screen",
+        "parse_int",    "parse_float"};
     for (auto &k : kw)
       if (s == k)
         return true;
@@ -2669,8 +2754,60 @@ private:
           return nullptr;
         return std::make_unique<ArrayPopExpr>(p.loc, std::move(arr));
       }
+      if (p.text == "parse_int") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto arg = parseExpr();
+        if (!arg)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        auto fc = std::make_unique<FuncCallExpr>(p.loc, "__builtin_parse_int");
+        fc->args.push_back(std::move(arg));
+        return fc;
+      }
+      if (p.text == "parse_float") {
+        next();
+        if (!exK(TK::LP))
+          return nullptr;
+        auto arg = parseExpr();
+        if (!arg)
+          return nullptr;
+        if (!exK(TK::RP))
+          return nullptr;
+        auto fc =
+            std::make_unique<FuncCallExpr>(p.loc, "__builtin_parse_float");
+        fc->args.push_back(std::move(arg));
+        return fc;
+      }
       // Variable reference
+      // Function call: identifier followed by '('
       if (!isKeyword(p.text)) {
+        // Peek ahead to see if this is a function call
+        Token p2 = peek2();
+        if (p2.kind == TK::LP) {
+          next(); // consume name
+          next(); // consume '('
+          auto fc = std::make_unique<FuncCallExpr>(p.loc, p.text);
+          if (peek().kind != TK::RP) {
+            auto arg = parseExpr();
+            if (!arg)
+              return nullptr;
+            fc->args.push_back(std::move(arg));
+            while (peek().kind == TK::Comma) {
+              next();
+              auto a2 = parseExpr();
+              if (!a2)
+                return nullptr;
+              fc->args.push_back(std::move(a2));
+            }
+          }
+          if (!exK(TK::RP))
+            return nullptr;
+          return fc;
+        }
+        // Variable reference
         next();
         return std::make_unique<VarRefExpr>(p.loc, p.text);
       }
@@ -2776,11 +2913,48 @@ private:
       return parseArrayRemove();
     if (p.text == "array_insert")
       return parseArrayInsert();
+    if (p.text == "on_destroy")
+      return parseOnDestroy();
+    if (p.text == "fn")
+      return parseFuncDecl();
+    if (p.text == "return")
+      return parseReturn();
+    if (p.text == "screen")
+      return parseRegisterWindow();
+    if (p.text == "navigate")
+      return parseNavigate();
+    if (p.text == "start_window")
+      return parseStartWindow();
 
     // Check if it's a variable assignment: identifier = expr;
     Token p2 = peek2();
     if (p2.kind == TK::Eq) {
       return parseVarAssign();
+    }
+
+    // Function call as statement: myFunc(args);
+    if (p2.kind == TK::LP) {
+      Token name = next(); // consume name
+      next();              // consume '('
+      auto fc = std::make_unique<FuncCallExpr>(name.loc, name.text);
+      if (peek().kind != TK::RP) {
+        auto arg = parseExpr();
+        if (!arg)
+          return nullptr;
+        fc->args.push_back(std::move(arg));
+        while (peek().kind == TK::Comma) {
+          next();
+          auto a2 = parseExpr();
+          if (!a2)
+            return nullptr;
+          fc->args.push_back(std::move(a2));
+        }
+      }
+      if (!exK(TK::RP))
+        return nullptr;
+      if (!exK(TK::Semi))
+        return nullptr;
+      return fc;
     }
 
     // Post-increment/decrement as statement: i++; or i--;
@@ -3761,6 +3935,132 @@ private:
     return std::make_unique<ArrayInsertStmt>(id.loc, std::move(arr),
                                              std::move(idx), std::move(val));
   }
+
+  ASTPtr parseFuncDecl() {
+    Token kw = next(); // consume 'fn'
+    Token name;
+    if (!ex(TK::Id, name))
+      return nullptr;
+    auto fd = std::make_unique<FuncDeclStmt>(kw.loc, name.text);
+
+    if (!exK(TK::LP))
+      return nullptr;
+    // Parse parameters
+    if (peek().kind != TK::RP) {
+      Token pname;
+      if (!ex(TK::Id, pname))
+        return nullptr;
+      FuncParam fp;
+      fp.name = pname.text;
+      fp.loc = pname.loc;
+      fd->params.push_back(fp);
+      while (peek().kind == TK::Comma) {
+        next();
+        Token pn2;
+        if (!ex(TK::Id, pn2))
+          return nullptr;
+        FuncParam fp2;
+        fp2.name = pn2.text;
+        fp2.loc = pn2.loc;
+        fd->params.push_back(fp2);
+      }
+    }
+    if (!exK(TK::RP))
+      return nullptr;
+
+    // Body
+    if (!exK(TK::LB))
+      return nullptr;
+    while (peek().kind != TK::RB && peek().kind != TK::Eof) {
+      auto s = parseStmt();
+      if (!s) {
+        if (bad_)
+          return nullptr;
+        continue;
+      }
+      fd->body.push_back(std::move(s));
+    }
+    if (!exK(TK::RB))
+      return nullptr;
+    return fd;
+  }
+
+  ASTPtr parseReturn() {
+    Token kw = next(); // consume 'return'
+    ASTPtr val = nullptr;
+    if (peek().kind != TK::Semi) {
+      val = parseExpr();
+      if (!val)
+        return nullptr;
+    }
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<ReturnStmt>(kw.loc, std::move(val));
+  }
+
+  ASTPtr parseRegisterWindow() {
+    Token kw = next(); // consume 'register_window' (parsed as 'window' with
+                       // different context)
+    // Actually, let's use a different syntax:
+    // register_window("name", width, height, () => { ... });
+    // But we already use 'window' for the main window.
+    // Let's use: screen("name", w, h, () => { ... });
+    // Already consumed 'screen'
+    if (!exK(TK::LP))
+      return nullptr;
+    Token name;
+    if (!ex(TK::Str, name))
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    Token w;
+    if (!ex(TK::Int, w))
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    Token h;
+    if (!ex(TK::Int, h))
+      return nullptr;
+    if (!exK(TK::Comma))
+      return nullptr;
+    auto bf = parseArrow();
+    if (!bf)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<RegisterWindowStmt>(
+        kw.loc, name.text, (int)w.intVal, (int)h.intVal, std::move(bf));
+  }
+
+  ASTPtr parseNavigate() {
+    Token kw = next(); // consume 'navigate'
+    if (!exK(TK::LP))
+      return nullptr;
+    auto target = parseExpr();
+    if (!target)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<NavigateStmt>(kw.loc, std::move(target));
+  }
+
+  ASTPtr parseStartWindow() {
+    Token kw = next(); // consume 'start_window'
+    if (!exK(TK::LP))
+      return nullptr;
+    auto target = parseExpr();
+    if (!target)
+      return nullptr;
+    if (!exK(TK::RP))
+      return nullptr;
+    if (!exK(TK::Semi))
+      return nullptr;
+    return std::make_unique<StartWindowStmt>(kw.loc, std::move(target));
+  }
 };
 
 // Runtime helpers for string concatenation and int-to-string conversion
@@ -3776,6 +4076,26 @@ extern "C" const char *rt_float_to_str(double v) {
   std::ostringstream oss;
   oss << v;
   return poolStr(oss.str());
+}
+
+extern "C" long long rt_parse_int(const char *s) {
+  if (!s || !s[0])
+    return 0;
+  try {
+    return std::stoll(s);
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" double rt_parse_float(const char *s) {
+  if (!s || !s[0])
+    return 0.0;
+  try {
+    return std::stod(s);
+  } catch (...) {
+    return 0.0;
+  }
 }
 
 extern "C" long long rt_str_eq(const char *a, const char *b) {
@@ -3878,6 +4198,140 @@ static void clearArrays() {
   g_arrays.clear();
 }
 
+struct WindowDef {
+  std::string name;
+  RtVoidCallback buildFn;
+  int width;
+  int height;
+};
+
+static std::vector<WindowDef> g_windowDefs;
+static std::mutex g_windowDefsMutex;
+
+extern "C" void rt_register_window(const char *name, void (*buildFn)(void),
+                                   int w, int h) {
+  std::lock_guard<std::mutex> lk(g_windowDefsMutex);
+  WindowDef wd;
+  wd.name = name ? name : "";
+  wd.buildFn = buildFn;
+  wd.width = w;
+  wd.height = h;
+  g_windowDefs.push_back(wd);
+}
+
+extern "C" void rt_navigate(const char *name) {
+  if (g_shuttingDown)
+    return;
+  std::string targetName = name ? name : "";
+
+  // Find the window definition
+  WindowDef targetDef;
+  bool found = false;
+  {
+    std::lock_guard<std::mutex> lk(g_windowDefsMutex);
+    for (auto &wd : g_windowDefs) {
+      if (wd.name == targetName) {
+        targetDef = wd;
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    rt_print(("Navigate error: window '" + targetName + "' not found").c_str());
+    return;
+  }
+
+  // Close current window
+  CSMainWindow *cur = currentWindow();
+  if (!cur)
+    return;
+
+  auto buildAndShow = [targetDef]() {
+    if (g_shuttingDown)
+      return;
+
+    // Close current window
+    CSMainWindow *cur = currentWindow();
+    if (cur) {
+      cur->onDestroyCb = nullptr; // prevent destroy callback
+      cur->close();
+    }
+
+    // Clean up current activity's widgets but keep app alive
+    if (g_currentActivity >= 0 &&
+        g_currentActivity < (int)g_activities.size()) {
+      Activity &act = g_activities[g_currentActivity];
+      // Remove widgets belonging to current activity
+      // We'll just create a new activity on top
+    }
+
+    // Create new window
+    Activity act;
+    act.id = (int)g_activities.size();
+    act.window = new CSMainWindow();
+    act.window->setWindowTitle(QString::fromUtf8(targetDef.name.c_str()));
+    int ww = targetDef.width > 0 ? targetDef.width : 400;
+    int wh = targetDef.height > 0 ? targetDef.height : 300;
+    act.window->resize(ww, wh);
+    QScreen *screen = QApplication::primaryScreen();
+    if (screen) {
+      QRect screenGeom = screen->availableGeometry();
+      int sx = (screenGeom.width() - ww) / 2 + screenGeom.x();
+      int sy = (screenGeom.height() - wh) / 2 + screenGeom.y();
+      act.window->move(sx, sy);
+    }
+    act.rootLayout = new QVBoxLayout(act.window);
+    act.rootLayout->setContentsMargins(16, 16, 16, 16);
+    act.rootLayout->setSpacing(10);
+    act.firstWidget = (int)g_widgets.size();
+    act.widgetCount = 0;
+    g_currentActivity = act.id;
+    g_activities.push_back(act);
+
+    while (!g_layoutStack.empty())
+      g_layoutStack.pop();
+    g_layoutStack.push(act.rootLayout);
+
+    // Call the build function to populate the window
+    if (targetDef.buildFn)
+      targetDef.buildFn();
+
+    act.rootLayout->addStretch();
+
+    // Set up close handler to quit app if this is last window
+    act.window->onDestroyCb = nullptr;
+    QObject::connect(act.window, &QWidget::destroyed, [](QObject *) {
+      if (g_app && !g_shuttingDown) {
+        // Check if any windows are still visible
+        bool anyVisible = false;
+        for (auto &a : g_activities) {
+          if (a.window && a.window->isVisible())
+            anyVisible = true;
+        }
+        if (!anyVisible)
+          g_app->quit();
+      }
+    });
+
+    act.window->show();
+  };
+
+  if (g_app && QThread::currentThread() != g_app->thread()) {
+    QMetaObject::invokeMethod(g_app, buildAndShow, Qt::QueuedConnection);
+  } else {
+    buildAndShow();
+  }
+}
+
+extern "C" void rt_start_window(const char *name) { rt_navigate(name); }
+
+static void clearWindowDefs() {
+  std::lock_guard<std::mutex> lk(g_windowDefsMutex);
+  g_windowDefs.clear();
+}
+
 class Codegen {
 public:
   Codegen()
@@ -3894,9 +4348,44 @@ public:
     B.SetInsertPoint(bb);
     currentFn = mainFn;
     pushScope();
+
+    std::vector<ASTNode *> screenNodes;
+    std::vector<ASTNode *> otherNodes;
+    for (auto &s : win.body) {
+      if (s->kind == AK::RegisterWindow || s->kind == AK::FuncDecl)
+        screenNodes.push_back(s.get());
+      else
+        otherNodes.push_back(s.get());
+    }
+
+    for (auto *s : screenNodes)
+      if (!emitNode(*s))
+        return false;
+
+    auto *buildFt = llvm::FunctionType::get(Void(), false);
+    auto *buildFn = llvm::Function::Create(
+        buildFt, llvm::Function::ExternalLinkage, "__cb_main_build", M.get());
+    {
+      auto *savedBlock = B.GetInsertBlock();
+      auto savedPoint = B.GetInsertPoint();
+      auto *savedFn = currentFn;
+      currentFn = buildFn;
+      auto *buildEntry = llvm::BasicBlock::Create(*ctx_, "e", buildFn);
+      B.SetInsertPoint(buildEntry);
+      for (auto *s : otherNodes)
+        emitNode(*s);
+      B.CreateRetVoid();
+      currentFn = savedFn;
+      B.SetInsertPoint(savedBlock, savedPoint);
+    }
+
+    std::vector<llvm::Value *> args = {str(win.title), buildFn, i32(win.width),
+                                       i32(win.height)};
+    B.CreateCall(fRegisterWindow, args);
+
     B.CreateCall(fWindowCreate,
                  {str(win.title), i32(win.width), i32(win.height)});
-    for (auto &s : win.body)
+    for (auto *s : otherNodes)
       if (!emitNode(*s))
         return false;
     B.CreateCall(fWindowEnd);
@@ -3930,6 +4419,18 @@ private:
     std::unordered_map<std::string, VarInfo> vars;
   };
   std::vector<VarScope> varScopes;
+
+  // Function registry: maps function name -> {LLVM function, param names, param
+  // globals}
+  struct FuncInfo {
+    llvm::Function *fn;
+    std::vector<std::string> paramNames;
+    // Each param gets a global variable so callbacks can access them
+    std::vector<llvm::GlobalVariable *> paramGlobals;
+    llvm::GlobalVariable *returnGlobal; // global to hold return value
+    llvm::Type *returnType;
+  };
+  std::unordered_map<std::string, FuncInfo> funcRegistry;
 
   void pushScope() { varScopes.push_back({}); }
   void popScope() {
@@ -3982,6 +4483,8 @@ private:
   llvm::FunctionCallee fArrayNew, fArrayPush, fArrayGet, fArraySet;
   llvm::FunctionCallee fArrayLength, fArrayPop, fArrayClear;
   llvm::FunctionCallee fArrayRemove, fArrayInsert;
+  llvm::FunctionCallee fRegisterWindow, fNavigate, fStartWindow;
+  llvm::FunctionCallee fParseInt, fParseFloat;
 
   llvm::Type *Void() { return llvm::Type::getVoidTy(*ctx_); }
   llvm::Type *Ptr() { return llvm::PointerType::getUnqual(*ctx_); }
@@ -4145,6 +4648,17 @@ private:
     fArrayInsert = M->getOrInsertFunction(
         "rt_array_insert",
         llvm::FunctionType::get(Void(), {I64(), I64(), I64()}, false));
+    fRegisterWindow = M->getOrInsertFunction(
+        "rt_register_window",
+        llvm::FunctionType::get(Void(), {Ptr(), Ptr(), I32(), I32()}, false));
+    fNavigate = M->getOrInsertFunction(
+        "rt_navigate", llvm::FunctionType::get(Void(), {Ptr()}, false));
+    fStartWindow = M->getOrInsertFunction(
+        "rt_start_window", llvm::FunctionType::get(Void(), {Ptr()}, false));
+    fParseInt = M->getOrInsertFunction(
+        "rt_parse_int", llvm::FunctionType::get(I64(), {Ptr()}, false));
+    fParseFloat = M->getOrInsertFunction(
+        "rt_parse_float", llvm::FunctionType::get(F64(), {Ptr()}, false));
   }
 
   llvm::Value *str(const std::string &s) {
@@ -4366,6 +4880,37 @@ private:
     }
     case AK::GetTickMs: {
       return B.CreateCall(fGetTickMs);
+    }
+
+    case AK::FuncCall: {
+      auto &fc = static_cast<const FuncCallExpr &>(n);
+      if (fc.name == "__builtin_parse_int") {
+        if (fc.args.empty())
+          return i64(0);
+        auto *arg = emitExpr(*fc.args[0]);
+        return B.CreateCall(fParseInt, {valToStr(arg)});
+      }
+      if (fc.name == "__builtin_parse_float") {
+        if (fc.args.empty())
+          return llvm::ConstantFP::get(F64(), 0.0);
+        auto *arg = emitExpr(*fc.args[0]);
+        return B.CreateCall(fParseFloat, {valToStr(arg)});
+      }
+      auto it = funcRegistry.find(fc.name);
+      if (it == funcRegistry.end()) {
+        // Unknown function — return 0
+        return i64(0);
+      }
+      auto &fi = it->second;
+      std::vector<llvm::Value *> args;
+      for (size_t i = 0; i < fc.args.size(); i++) {
+        auto *val = emitExpr(*fc.args[i]);
+        args.push_back(valToI64(val));
+      }
+      // Pad with zeros if not enough args
+      while (args.size() < fi.paramNames.size())
+        args.push_back(i64(0));
+      return B.CreateCall(fi.fn, args);
     }
 
     case AK::ArrayNew: {
@@ -4924,6 +5469,117 @@ private:
       return true;
     }
 
+    case AK::RegisterWindow: {
+      auto &rw = static_cast<const RegisterWindowStmt &>(n);
+      auto *buildFn = makeCb(*rw.buildFunc);
+      std::vector<llvm::Value *> args = {str(rw.name), buildFn, i32(rw.width),
+                                         i32(rw.height)};
+      B.CreateCall(fRegisterWindow, args);
+      return true;
+    }
+    case AK::Navigate: {
+      auto &nav = static_cast<const NavigateStmt &>(n);
+      auto *target = emitExpr(*nav.target);
+      std::vector<llvm::Value *> args = {valToStr(target)};
+      B.CreateCall(fNavigate, args);
+      return true;
+    }
+    case AK::StartWindow: {
+      auto &sw = static_cast<const StartWindowStmt &>(n);
+      auto *target = emitExpr(*sw.target);
+      std::vector<llvm::Value *> args = {valToStr(target)};
+      B.CreateCall(fStartWindow, args);
+      return true;
+    }
+
+    case AK::FuncDecl: {
+      auto &fd = static_cast<const FuncDeclStmt &>(n);
+
+      // Create global variables for parameters (so they're accessible from
+      // callbacks)
+      FuncInfo fi;
+      fi.returnType = I64();
+      // Return value global
+      std::string retName = ".fn.ret." + fd.name + "." + std::to_string(gc++);
+      fi.returnGlobal = new llvm::GlobalVariable(
+          *M, I64(), false, llvm::GlobalValue::InternalLinkage,
+          llvm::ConstantInt::get(I64(), 0), retName);
+
+      // Parameter globals
+      for (auto &param : fd.params) {
+        std::string pgname = ".fn.param." + fd.name + "." + param.name + "." +
+                             std::to_string(gc++);
+        auto *pgv = new llvm::GlobalVariable(
+            *M, I64(), false, llvm::GlobalValue::InternalLinkage,
+            llvm::ConstantInt::get(I64(), 0), pgname);
+        fi.paramGlobals.push_back(pgv);
+        fi.paramNames.push_back(param.name);
+      }
+
+      // Create the LLVM function: returns i64, takes i64 params
+      std::vector<llvm::Type *> paramTypes(fd.params.size(), I64());
+      auto *ft = llvm::FunctionType::get(I64(), paramTypes, false);
+      auto *fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                        "__userfn_" + fd.name, M.get());
+      fi.fn = fn;
+      funcRegistry[fd.name] = fi;
+
+      // Save current state
+      auto *sb = B.GetInsertBlock();
+      auto si = B.GetInsertPoint();
+      auto *savedFn = currentFn;
+      currentFn = fn;
+
+      auto *entry = llvm::BasicBlock::Create(*ctx_, "entry", fn);
+      B.SetInsertPoint(entry);
+
+      // Store arguments into param globals and declare in scope
+      pushScope();
+      unsigned idx = 0;
+      for (auto &arg : fn->args()) {
+        arg.setName(fd.params[idx].name);
+        B.CreateStore(&arg, fi.paramGlobals[idx]);
+        // Register param as a variable in scope
+        VarInfo vi{fi.paramGlobals[idx], I64()};
+        varScopes.back().vars[fd.params[idx].name] = vi;
+        idx++;
+      }
+
+      // Emit body
+      for (auto &s : fd.body)
+        emitNode(*s);
+
+      // If no explicit return, return 0
+      if (!B.GetInsertBlock()->getTerminator())
+        B.CreateRet(llvm::ConstantInt::get(I64(), 0));
+
+      popScope();
+
+      // Restore state
+      currentFn = savedFn;
+      B.SetInsertPoint(sb, si);
+      return true;
+    }
+    case AK::Return: {
+      auto &rs = static_cast<const ReturnStmt &>(n);
+      if (rs.value) {
+        auto *val = emitExpr(*rs.value);
+        B.CreateRet(valToI64(val));
+      } else {
+        B.CreateRet(llvm::ConstantInt::get(I64(), 0));
+      }
+      // Create unreachable block for any code after return
+      llvm::Function *fn = B.GetInsertBlock()->getParent();
+      auto *deadBB = llvm::BasicBlock::Create(*ctx_, "after.ret", fn);
+      B.SetInsertPoint(deadBB);
+      return true;
+    }
+    case AK::FuncCall: {
+      // As statement, discard return value
+      emitExpr(n);
+      return true;
+    }
+
     case AK::ArrayPush: {
       auto &ap = static_cast<const ArrayPushStmt &>(n);
       auto *arr = emitExpr(*ap.array);
@@ -5044,6 +5700,11 @@ static const Sym g_syms[] = {
     {"rt_array_clear", (void *)(intptr_t)rt_array_clear},
     {"rt_array_remove", (void *)(intptr_t)rt_array_remove},
     {"rt_array_insert", (void *)(intptr_t)rt_array_insert},
+    {"rt_register_window", (void *)(intptr_t)rt_register_window},
+    {"rt_navigate", (void *)(intptr_t)rt_navigate},
+    {"rt_start_window", (void *)(intptr_t)rt_start_window},
+    {"rt_parse_int", (void *)(intptr_t)rt_parse_int},
+    {"rt_parse_float", (void *)(intptr_t)rt_parse_float},
     {nullptr, nullptr}};
 
 static std::string readFile(const std::string &p) {
